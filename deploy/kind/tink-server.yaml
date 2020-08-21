@@ -1,0 +1,107 @@
+apiVersion: cert-manager.io/v1alpha2
+kind: Certificate
+metadata:
+  name: tink-server-certificate
+spec:
+  secretName: tink-server-certificate
+  dnsNames:
+  - tink-server
+  - tink-server.default
+  - tink-server.default.svc
+  - tink-server.default.svc.cluster.local
+  issuerRef:
+    name: selfsigned-issuer
+    kind: Issuer
+    group: cert-manager.io
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tink-server
+spec:
+  selector:
+    matchLabels:
+      app: tink-server
+  template:
+    metadata:
+      labels:
+        app: tink-server
+    spec:
+      containers:
+      - name: tink-server
+        image: quay.io/tinkerbell/tink:latest
+        resources:
+          limits:
+            memory: "128Mi"
+            cpu: "500m"
+        ports:
+        - containerPort: 42113
+          name: grpc-authority
+          protocol: TCP
+        - containerPort: 42114
+          name: http-authority
+          protocol: TCP
+        volumeMounts:
+        - mountPath: /certs/onprem
+          name: tink-server-certificate
+          readOnly: true
+        # TODO: re-add liveness probe after certs are configured
+        # livenessProbe:
+        #   failureThreshold: 30
+        #   httpGet:
+        #     path: /cert
+        #     port: http-authority
+        #     scheme: HTTP
+        #   periodSeconds: 5
+        #   successThreshold: 1
+        #   timeoutSeconds: 2
+        env:
+        - name: FACILITY
+          value: onprem
+        - name: PACKET_ENV
+          value: testing
+        - name: PACKET_VERSION
+          value: ignored
+        - name: PGDATABASE
+          value: tinkerbell
+        - name: PGHOST
+          value: db-postgresql
+        - name: PGPASSWORD
+          value: tinkerbell
+        - name: PGPORT
+          value: "5432"
+        - name: PGSSLMODE
+          value: disable
+        - name: PGUSER
+          value: tinkerbell
+        - name: ROLLBAR_DISABLE
+          value: "1"
+        - name: ROLLBAR_TOKEN
+          value: ignored
+        - name: TINKERBELL_GRPC_AUTHORITY
+          value: :42113
+        - name: TINKERBELL_HTTP_AUTHORITY
+          value: :42114
+        - name: TINK_AUTH_PASSWORD
+          value: tinkerbell
+        - name: TINK_AUTH_USERNAME
+          value: tinkerbell
+      volumes:
+      - name: tink-server-certificate
+        secret:
+          secretName: tink-server-certificate
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: tink-server
+spec:
+  ports:
+  - name: "grpc-authority"
+    port: 42113
+    targetPort: "grpc-authority"
+  - name: "http-authority"
+    port: 42114
+    targetPort: "http-authority"
+  selector:
+    app: tink-server
