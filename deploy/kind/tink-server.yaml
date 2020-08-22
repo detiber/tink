@@ -1,4 +1,4 @@
-apiVersion: cert-manager.io/v1alpha2
+apiVersion: cert-manager.io/v1beta1
 kind: Certificate
 metadata:
   name: tink-server-certificate
@@ -30,6 +30,7 @@ spec:
       containers:
       - name: tink-server
         image: quay.io/tinkerbell/tink:latest
+        imagePullPolicy: IfNotPresent
         resources:
           limits:
             memory: "128Mi"
@@ -45,16 +46,15 @@ spec:
         - mountPath: /certs/onprem
           name: tink-server-certificate
           readOnly: true
-        # TODO: re-add liveness probe after certs are configured
-        # livenessProbe:
-        #   failureThreshold: 30
-        #   httpGet:
-        #     path: /cert
-        #     port: http-authority
-        #     scheme: HTTP
-        #   periodSeconds: 5
-        #   successThreshold: 1
-        #   timeoutSeconds: 2
+        livenessProbe:
+          failureThreshold: 30
+          httpGet:
+            path: /cert
+            port: http-authority
+            scheme: HTTP
+          periodSeconds: 5
+          successThreshold: 1
+          timeoutSeconds: 2
         env:
         - name: FACILITY
           value: onprem
@@ -97,11 +97,11 @@ metadata:
   name: tink-server
 spec:
   ports:
-  - name: "grpc-authority"
+  - name: grpc-authority
     port: 42113
-    targetPort: "grpc-authority"
-  - name: "http-authority"
+    targetPort: grpc-authority
+  - name: http-authority
     port: 42114
-    targetPort: "http-authority"
+    targetPort: http-authority
   selector:
     app: tink-server

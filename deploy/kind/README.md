@@ -13,8 +13,6 @@ Registry configuration roughly cribbed from https://www.civo.com/learn/set-up-a-
 - Bring up a new kind cluster
 
 ```sh
-
-COPY
 cat <<EOF | kind create cluster --name tink-dev --config=-
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
@@ -113,7 +111,13 @@ kubectl create -f registry-ingress.yaml
 export TINKERBELL_TINK_USERNAME=admin
 export TINKERBELL_TINK_PASSWORD=$(head -c 12 /dev/urandom | sha256sum | cut -d' ' -f1)
 
+kubectl create -f tink-server.yaml
+```
 
+- Deploy hegel
+
+```sh
+kubectl create -f hegel.yaml
 ```
 
 ## Teardown
