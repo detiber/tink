@@ -43,7 +43,7 @@ spec:
           name: http-authority
           protocol: TCP
         volumeMounts:
-        - mountPath: /certs/onprem
+        - mountPath: /certs
           name: tink-server-certificate
           readOnly: true
         livenessProbe:
@@ -55,9 +55,12 @@ spec:
           periodSeconds: 5
           successThreshold: 1
           timeoutSeconds: 2
+        args:
+        - --facility=onprem
+        - --ca-cert=/certs/ca.crt
+        - --tls-cert=/certs/tls.crt
+        - --tls-key=/certs/tls.key
         env:
-        - name: FACILITY
-          value: onprem
         - name: PACKET_ENV
           value: testing
         - name: PACKET_VERSION
