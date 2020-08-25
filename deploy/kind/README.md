@@ -107,6 +107,8 @@ kubectl create -f registry-ingress.yaml
 
 - Deploy tink-server
 
+TODO: expose the tink-server outside of the kind cluster
+
 ```sh
 export TINKERBELL_TINK_USERNAME=admin
 export TINKERBELL_TINK_PASSWORD=$(head -c 12 /dev/urandom | sha256sum | cut -d' ' -f1)
@@ -119,6 +121,13 @@ kubectl create -f tink-server.yaml
 ```sh
 kubectl create -f hegel.yaml
 ```
+
+
+## Running the CLI
+
+TODO: better way to run this outside of the kind cluster
+
+kubectl run -it --command --rm --attach --image quay.io/tinkerbell/tink-cli:latest --env="TINKERBELL_GRPC_AUTHORITY=tink-server:42113" --env="TINKERBELL_CERT_URL=http://tink-server:42114/cert" cli /bin/ash
 
 ## Teardown
 
