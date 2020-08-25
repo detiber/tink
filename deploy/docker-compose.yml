@@ -5,6 +5,9 @@ services:
       context: ../
       dockerfile: cmd/tink-server/Dockerfile
     restart: unless-stopped
+    command:
+      - --tls-cert=/certs/${FACILITY:-onprem}/bundle.pem
+      - --tls-key=/certs/${FACILITY:-onprem}/server-key.pem
     environment:
       FACILITY: ${FACILITY:-onprem}
       PGDATABASE: tinkerbell
