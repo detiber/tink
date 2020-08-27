@@ -19,15 +19,6 @@ spec:
           limits:
             memory: "128Mi"
             cpu: "500m"
-        livenessProbe:
-          failureThreshold: 30
-          httpGet:
-            path: /cert
-            port: http-authority
-            scheme: HTTP
-          periodSeconds: 5
-          successThreshold: 1
-          timeoutSeconds: 2
         env:
         - name: HEGEL_FACILITY
           value: onprem
@@ -65,3 +56,16 @@ spec:
     targetPort: hegel-metadata
   selector:
     app: hegel
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: hegel-node
+spec:
+  type: NodePort
+  selector:
+    app: hegel
+  ports:
+  - name: hegel-metadata
+    port: 42115
+    targetPort: hegel-metadata
