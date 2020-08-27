@@ -4,34 +4,28 @@ Registry configuration roughly cribbed from https://www.civo.com/learn/set-up-a-
 
 ## Prerequisites
 
-- [kind](https://kind.sigs.k8s.io/) (Tested with v0.8.1)
+- [kind](https://kind.sigs.k8s.io/) (v0.8.0+, Tested with v0.8.1)
 - kubectl
 - [helm](https://helm.sh/docs/intro/quickstart/) (v3+, tested with v3.3.0)
 
 ## Setup
 
+- Setup a new docker network to share between libvirt and kind
+
+```sh
+docker network create -d=bridge --subnet 172.30.0.0/16 --ip-range 172.30.100.0/24 \
+  -o com.docker.network.bridge.enable_ip_masquerade=true \
+  -o com.docker.network.bridge.name=tink-dev \
+  -o com.docker.network.bridge.enable_icc=1 \
+  -o com.docker.network.bridge.host_binding_ipv4=0.0.0.0 \
+  tink-dev
+```
+
 - Bring up a new kind cluster
 
 ```sh
-cat <<EOF | kind create cluster --name tink-dev --config=-
-kind: Cluster
-apiVersion: kind.x-k8s.io/v1alpha4
-nodes:
-- role: control-plane
-  kubeadmConfigPatches:
-  - |
-    kind: InitConfiguration
-    nodeRegistration:
-      kubeletExtraArgs:
-        node-labels: "ingress-ready=true"
-  extraPortMappings:
-  - containerPort: 80
-    hostPort: 80
-    protocol: TCP
-  - containerPort: 443
-    hostPort: 443
-    protocol: TCP
-EOF
+KIND_EXPERIMENTAL_DOCKER_NETWORK=tink-dev kind create cluster --name tink-dev
+
 ```
 
 - Install a PostgreSQL DB using the bitnami helm chart (NOTE: this is not an ha db, bitnami does have a postgresql-ha that could be used for that)
@@ -41,6 +35,8 @@ kubectl create configmap db-init --from-file=../db/tinkerbell-init.sql
 helm repo add bitnami https://charts.bitnami.com/bitnami
 helm install db --set postgresqlUsername=tinkerbell,postgresqlPassword=tinkerbell,postgresqlDatabase=tinkerbell,initdbScriptsConfigMap=db-init bitnami/postgresql
 ```
+
+TODO: rather than hardcoding the password here, let it be generated and fetch it where needed (see helm output)
 
 - Install cert-manager with a self-signed issuer
 
@@ -70,48 +66,13 @@ helm install registry stable/docker-registry \
   --set secrets.htpasswd=$(docker run --entrypoint htpasswd registry:2.6 -Bbn ${TINKERBELL_REGISTRY_USERNAME} ${TINKERBELL_REGISTRY_PASSWORD})
 ```
 
-- Deploy NGINX ingress
-
-```sh
-helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
-# taken from the deploy script that is used to generate the static manifest referenced by the kind docs
-cat << EOF | helm install ingress ingress-nginx/ingress-nginx --values -
-controller:
-  updateStrategy:
-    type: RollingUpdate
-    rollingUpdate:
-      maxUnavailable: 1
-  hostPort:
-    enabled: true
-  terminationGracePeriodSeconds: 0
-  service:
-    type: NodePort
-  nodeSelector:
-    ingress-ready: "true"
-  tolerations:
-    - key: "node-role.kubernetes.io/master"
-      operator: "Equal"
-      effect: "NoSchedule"
-  publishService:
-    enabled: false
-  extraArgs:
-    publish-status-address: localhost
-EOF
-```
-
-- Create the ingress for the registry
-
-```sh
-kubectl create -f registry-ingress.yaml
-```
-
 - Deploy tink-server
 
-TODO: expose the tink-server outside of the kind cluster
-
 ```sh
-export TINKERBELL_TINK_USERNAME=admin
-export TINKERBELL_TINK_PASSWORD=$(head -c 12 /dev/urandom | sha256sum | cut -d' ' -f1)
+cat <<EOF > tink-server/tink-credentials.env
+TINKERBELL_TINK_USERNAME=admin
+TINKERBELL_TINK_PASSWORD=$(head -c 12 /dev/urandom | sha256sum | cut -d' ' -f1)
+EOF
 
 kubectl create -f tink-server.yaml
 ```
@@ -120,6 +81,25 @@ kubectl create -f tink-server.yaml
 
 ```sh
 kubectl create -f hegel.yaml
+```
+
+- Bring up the vagrant host
+
+```sh
+vagrant up provisioner
+```
+
+TODO: move nginx to kind, pre-load mirror content as needed, set appropriate env vars below
+
+- Gather env vars for the docker compose setup
+```sh
+TINK_IP=$(kubectl get nodes tink-dev-control-plane -o jsonpath='{.status.addresses[?(@.type=="InternalIP")].address}')
+TINK_GRPC_PORT=$(kubectl get services tink-server-node -o jsonpath='{.spec.ports[?(@.targetPort=="grpc-authority")].nodePort}')
+TINK_HTTP_PORT=$(kubectl get services tink-server-node -o jsonpath='{.spec.ports[?(@.targetPort=="http-authority")].nodePort}')
+TINKERBELL_REGISTRY_USERNAME ^^above
+TINKERBELL_REGISTRY_PASSWORD ^^above
+
+get them into the vagrant host and docker-compose -f <file> up --build -d
 ```
 
 
