@@ -70,7 +70,10 @@ spec:
         - name: PGHOST
           value: db-postgresql
         - name: PGPASSWORD
-          value: tinkerbell
+          valueFrom:
+            secretKeyRef:
+              name: db-postgresql
+              key: postgresql-password
         - name: PGPORT
           value: "5432"
         - name: PGSSLMODE
@@ -86,9 +89,15 @@ spec:
         - name: TINKERBELL_HTTP_AUTHORITY
           value: :42114
         - name: TINK_AUTH_PASSWORD
-          value: tinkerbell
+          valueFrom:
+            secretKeyRef:
+              name: tink-credentials
+              key: TINKERBELL_TINK_PASSWORD
         - name: TINK_AUTH_USERNAME
-          value: tinkerbell
+          valueFrom:
+            secretKeyRef:
+              name: tink-credentials
+              key: TINKERBELL_TINK_USERNAME
       volumes:
       - name: tink-server-certificate
         secret:
@@ -108,3 +117,19 @@ spec:
     targetPort: http-authority
   selector:
     app: tink-server
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: tink-server-node
+spec:
+  type: NodePort
+  selector:
+    app: tink-server
+  ports:
+  - name: grpc-authority
+    port: 42113
+    targetPort: grpc-authority
+  - name: http-authority
+    port: 42114
+    targetPort: http-authority
