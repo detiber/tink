@@ -33,10 +33,8 @@ KIND_EXPERIMENTAL_DOCKER_NETWORK=tink-dev kind create cluster --name tink-dev
 ```sh
 kubectl create configmap db-init --from-file=../db/tinkerbell-init.sql
 helm repo add bitnami https://charts.bitnami.com/bitnami
-helm install db --set postgresqlUsername=tinkerbell,postgresqlPassword=tinkerbell,postgresqlDatabase=tinkerbell,initdbScriptsConfigMap=db-init bitnami/postgresql
+helm install db --set postgresqlUsername=tinkerbell,postgresqlDatabase=tinkerbell,initdbScriptsConfigMap=db-init bitnami/postgresql
 ```
-
-TODO: rather than hardcoding the password here, let it be generated and fetch it where needed (see helm output)
 
 - Install cert-manager with a self-signed issuer
 
@@ -57,24 +55,73 @@ kubectl create -f self-signed-issuer.yaml
 - Install the registry
 
 ```sh
-export TINKERBELL_REGISTRY_USERNAME=admin
-export TINKERBELL_REGISTRY_PASSWORD=$(head -c 12 /dev/urandom | sha256sum | cut -d' ' -f1)
+export REGISTRY_PASSWORD=$(head -c 12 /dev/urandom | sha256sum | cut -d' ' -f1)
+export TINK_IP=$(kubectl get nodes tink-dev-control-plane -o jsonpath='{.status.addresses[?(@.type=="InternalIP")].address}')
+
+cat << EOF | kubectl create -f -
+apiVersion: cert-manager.io/v1beta1
+kind: Certificate
+metadata:
+  name: registry-server-certificate
+spec:
+  secretName: registry-server-certificate
+  dnsNames:
+  - tink-docker-registry
+  - tink-docker-registry.default
+  - tink-docker-registry.default.svc
+  - tink-docker-registry.default.svc.cluster.local
+  ipAddresses:
+  - ${TINK_IP}
+  issuerRef:
+    name: selfsigned-issuer
+    kind: Issuer
+    group: cert-manager.io
+EOF
 
 helm repo add stable https://kubernetes-charts.storage.googleapis.com/
-helm install registry stable/docker-registry \
-  --set persistence.enabled=false \
-  --set secrets.htpasswd=$(docker run --entrypoint htpasswd registry:2.6 -Bbn ${TINKERBELL_REGISTRY_USERNAME} ${TINKERBELL_REGISTRY_PASSWORD})
+helm install tink stable/docker-registry \
+  --set persistence.enabled=true,service.type=NodePort,tlsSecretName=registry-server-certificate \
+  --set secrets.htpasswd=$(docker run --entrypoint htpasswd registry:2.6 -Bbn admin ${REGISTRY_PASSWORD})
+
+PORT=$(kubectl get services tink-docker-registry -o jsonpath='{.spec.ports[?(@.targetPort==5000)].nodePort}') \
+  kubectl create secret generic tink-registry --from-literal=USERNAME=admin \
+  --from-literal=PASSWORD=${REGISTRY_PASSWORD} --from-literal=URL=${TINK_IP}:${PORT}
 ```
 
 - Deploy tink-server
 
 ```sh
-cat <<EOF > tink-server/tink-credentials.env
-TINKERBELL_TINK_USERNAME=admin
-TINKERBELL_TINK_PASSWORD=$(head -c 12 /dev/urandom | sha256sum | cut -d' ' -f1)
+kubectl create secret generic tink-credentials \
+  --from-literal USERNAME=admin \
+  --from-literal PASSWORD=$(head -c 12 /dev/urandom | sha256sum | cut -d' ' -f1)
+
+cat << EOF | kubectl create -f -
+apiVersion: cert-manager.io/v1beta1
+kind: Certificate
+metadata:
+  name: tink-server-certificate
+spec:
+  secretName: tink-server-certificate
+  dnsNames:
+  - tink-server
+  - tink-server.default
+  - tink-server.default.svc
+  - tink-server.default.svc.cluster.local
+  ipAddresses:
+  - ${TINK_IP}
+  issuerRef:
+    name: selfsigned-issuer
+    kind: Issuer
+    group: cert-manager.io
 EOF
 
 kubectl create -f tink-server.yaml
+
+kubectl create secret generic tink-server \
+  --from-literal USERNAME=$(kubectl get secret -l app=tink-server -o jsonpath='{.items[0].data.USERNAME}' | base64 -d) \
+  --from-literal PASSWORD=$(kubectl get secret -l app=tink-server -o jsonpath='{.items[0].data.PASSWORD}' | base64 -d) \
+  --from-literal GRPC_AUTHORITY=${TINK_IP}:$(kubectl get services tink-server -o jsonpath='{.spec.ports[?(@.targetPort=="grpc-authority")].nodePort}')
+  --from-literal CERT_URL=http://${TINK_IP}:$(kubectl get services tink-server -o jsonpath='{.spec.ports[?(@.targetPort=="http-authority")].nodePort}')/cert \
 ```
 
 - Deploy hegel
@@ -83,31 +130,66 @@ kubectl create -f tink-server.yaml
 kubectl create -f hegel.yaml
 ```
 
-- Bring up the vagrant host
+- bring up the mirror host
 
 ```sh
-vagrant up provisioner
+kubectl create -f nginx.yaml
+kubectl create secret generic tink-mirror \
+  --from-literal URL=http://${TINK_IP}/$(kubectl get services tink-mirror -o jsonpath='{.spec.ports[?(@.targetPort=="http")].nodePort}')
 ```
 
-TODO: move nginx to kind, pre-load mirror content as needed, set appropriate env vars below
+- Bring up boots
 
-- Gather env vars for the docker compose setup
 ```sh
-TINK_IP=$(kubectl get nodes tink-dev-control-plane -o jsonpath='{.status.addresses[?(@.type=="InternalIP")].address}')
-TINK_GRPC_PORT=$(kubectl get services tink-server-node -o jsonpath='{.spec.ports[?(@.targetPort=="grpc-authority")].nodePort}')
-TINK_HTTP_PORT=$(kubectl get services tink-server-node -o jsonpath='{.spec.ports[?(@.targetPort=="http-authority")].nodePort}')
-TINKERBELL_REGISTRY_USERNAME ^^above
-TINKERBELL_REGISTRY_PASSWORD ^^above
-
-get them into the vagrant host and docker-compose -f <file> up --build -d
+kubectl create -f boots.yaml
 ```
-
 
 ## Running the CLI
 
 TODO: better way to run this outside of the kind cluster
 
+```sh
 kubectl run -it --command --rm --attach --image quay.io/tinkerbell/tink-cli:latest --env="TINKERBELL_GRPC_AUTHORITY=tink-server:42113" --env="TINKERBELL_CERT_URL=http://tink-server:42114/cert" cli /bin/ash
+```
+
+## Create the hardware
+
+```sh
+cat > hardware-data.json <<EOF
+{
+  "id": "ce2e62ed-826f-4485-a39f-a82bb74338e2",
+  "metadata": {
+    "facility": {
+      "facility_code": "onprem"
+    },
+    "instance": {},
+    "state": ""
+  },
+  "network": {
+    "interfaces": [
+      {
+        "dhcp": {
+          "arch": "x86_64",
+          "ip": {
+            "address": "172.30.0.5",
+            "gateway": "172.30.0.1",
+            "netmask": "255.255.0.0"
+          },
+          "mac": "08:00:27:00:00:01",
+          "uefi": false
+        },
+        "netboot": {
+          "allow_pxe": true,
+          "allow_workflow": true
+        }
+      }
+    ]
+  }
+}
+EOF
+```
+
+Continue with rest of the steps from the local quickstart
 
 ## Teardown
 
@@ -116,16 +198,6 @@ kind delete cluster --name tink-dev
 ```
 
 ## TODO
-- Deploy components to cluster
-  - basic manifests
-  - add templating
-    - kustomize???
-    - helm???
-- Solve networking between virtual hosts and kind
-  - Linux and MacOS
-  - Possible ideas:
-    - ingress (wouldn't work for broadcast)
-    - hacking kind to use same network bridge for host networking
-    - ???
-- Add some type of templating mechanism
+- Add some type of templating mechanism helm/kustomize????
+- Better networking solution for non-kind/libvirt environments
 - Add tilt configuration for automating updating/deployment of components for rapid development iteration

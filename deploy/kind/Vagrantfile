@@ -27,37 +27,20 @@ Vagrant.configure('2') do |config|
     end
   end
 
-#   config.vm.define "worker" do |worker|
-#     worker.vm.box = nil
-#     worker.vm.network :private_network,
-#                       mac: "080027000001",
-#                       virtualbox__intnet: "tink_network",
-#                       libvirt__network_name: "tink_network",
-#                       libvirt__dhcp_enabled: false,
-#                       libvirt__forward_mode: 'none',
-#                       auto_config: false
+  config.vm.define "worker" do |worker|
+    worker.vm.box = nil
+    worker.vm.network :public_network, 
+                      dev: "tink-dev",
+                      mode: "bridge",
+                      type: "bridge",
+                      mac: "080027000001",
+                      auto_config: false
 
-#     worker.vm.provider :libvirt do |lv|
-#       lv.memory = 4*1024
-#       lv.cpus = 1
-#       lv.boot 'network'
-#       lv.mgmt_attach = false
-#     end
-
-#     worker.vm.provider :virtualbox do |vb, worker|
-#       worker.vm.box = 'generic/alpine38'
-#       vb.memory = 4*1024
-#       vb.cpus = 1
-#       vb.gui = worker_gui_enabled?
-#       vb.customize [
-#         'modifyvm', :id,
-#         '--nic1', 'none',
-#         '--boot1', 'net',
-#         '--boot2', 'none',
-#         '--boot3', 'none',
-#         '--boot4', 'none',
-#         '--macaddress1', '080027000001'
-#       ]
-#     end
-#   end
+    worker.vm.provider :libvirt do |lv|
+      lv.memory = 4*1024
+      lv.cpus = 1
+      lv.boot 'network'
+      lv.mgmt_attach = false
+    end
+  end
 end
