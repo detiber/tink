@@ -57,10 +57,10 @@ command_exists() (
 configure_vagrant_user() (
 	sudo usermod -aG docker vagrant
 
-	echo -n "$TINKERBELL_REGISTRY_PASSWORD" |
-		sudo -iu vagrant docker login \
-			--username="$TINKERBELL_REGISTRY_USERNAME" \
-			--password-stdin "$TINKERBELL_HOST_IP"
+	#echo -n "$TINKERBELL_REGISTRY_PASSWORD" |
+	#	sudo -iu vagrant docker login \
+	#		--username="$TINKERBELL_REGISTRY_USERNAME" \
+	#		--password-stdin "$TINKERBELL_HOST_IP"
 )
 
 main() (
