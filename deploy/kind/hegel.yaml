@@ -50,18 +50,6 @@ kind: Service
 metadata:
   name: hegel
 spec:
-  ports:
-  - name: hegel-metadata
-    port: 42115
-    targetPort: hegel-metadata
-  selector:
-    app: hegel
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: hegel-node
-spec:
   type: NodePort
   selector:
     app: hegel
