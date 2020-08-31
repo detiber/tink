@@ -82,7 +82,7 @@ kind: Service
 metadata:
   name: tink-mirror
 spec:
-  type: NodePort
+  type: LoadBalancer
   selector:
     app: tink-mirror
   ports:
