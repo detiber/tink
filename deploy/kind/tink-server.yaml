@@ -86,7 +86,7 @@ kind: Service
 metadata:
   name: tink-server
 spec:
-  type: NodePort
+  type: LoadBalancer
   selector:
     app: tink-server
   ports:

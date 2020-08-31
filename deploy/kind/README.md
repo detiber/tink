@@ -14,7 +14,6 @@ Registry configuration roughly cribbed from https://www.civo.com/learn/set-up-a-
 
 ```sh
 docker network create -d=bridge --subnet 172.30.0.0/16 --ip-range 172.30.100.0/24 \
-  -o com.docker.network.bridge.enable_ip_masquerade=true \
   -o com.docker.network.bridge.name=tink-dev \
   -o com.docker.network.bridge.enable_icc=1 \
   -o com.docker.network.bridge.host_binding_ipv4=0.0.0.0 \
@@ -25,7 +24,39 @@ docker network create -d=bridge --subnet 172.30.0.0/16 --ip-range 172.30.100.0/2
 
 ```sh
 KIND_EXPERIMENTAL_DOCKER_NETWORK=tink-dev kind create cluster --name tink-dev
+```
 
+TODO: Update above command to not deploy kubenet and then deploy Calico for CNI(https://alexbrand.dev/post/creating-a-kind-cluster-with-calico-networking/), this is needed
+because kindnet is overriding the externalTrafficPolicy of Local on the boots-udp service, causing
+boots not to see the sourceIP correctly, or possibly use cilium based on: https://docs.cilium.io/en/v1.8/gettingstarted/kind/
+
+
+- Install MetalLB (from metallb.universe.tf/installation/)
+
+```sh
+kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/v0.9.3/manifests/namespace.yaml
+kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/v0.9.3/manifests/metallb.yaml
+# On first install only
+kubectl create secret generic -n metallb-system memberlist --from-literal=secretkey="$(openssl rand -base64 128)"
+```
+
+- Add the metallb configuration
+
+```sh
+cat << EOF | kubectl create -f -
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  namespace: metallb-system
+  name: config
+data:
+  config: |
+    address-pools:
+    - name: default
+      protocol: layer2
+      addresses:
+      - 172.30.10.0-172.30.10.255
+EOF
 ```
 
 - Install a PostgreSQL DB using the bitnami helm chart (NOTE: this is not an ha db, bitnami does have a postgresql-ha that could be used for that)
@@ -55,8 +86,8 @@ kubectl create -f self-signed-issuer.yaml
 - Install the registry
 
 ```sh
+export REGISTRY_IP=172.30.10.0
 export REGISTRY_PASSWORD=$(head -c 12 /dev/urandom | sha256sum | cut -d' ' -f1)
-export TINK_IP=$(kubectl get nodes tink-dev-control-plane -o jsonpath='{.status.addresses[?(@.type=="InternalIP")].address}')
 
 cat << EOF | kubectl create -f -
 apiVersion: cert-manager.io/v1beta1
@@ -71,7 +102,7 @@ spec:
   - tink-docker-registry.default.svc
   - tink-docker-registry.default.svc.cluster.local
   ipAddresses:
-  - ${TINK_IP}
+  - ${REGISTRY_IP}
   issuerRef:
     name: selfsigned-issuer
     kind: Issuer
@@ -80,17 +111,20 @@ EOF
 
 helm repo add stable https://kubernetes-charts.storage.googleapis.com/
 helm install tink stable/docker-registry \
-  --set persistence.enabled=true,service.type=NodePort,tlsSecretName=registry-server-certificate \
+  --set persistence.enabled=true,service.type=LoadBalancer,service.LoadBalancerIP=${REGISTRY_IP} \
+  --set tlsSecretName=registry-server-certificate \
   --set secrets.htpasswd=$(docker run --entrypoint htpasswd registry:2.6 -Bbn admin ${REGISTRY_PASSWORD})
 
-PORT=$(kubectl get services tink-docker-registry -o jsonpath='{.spec.ports[?(@.targetPort==5000)].nodePort}') \
-  kubectl create secret generic tink-registry --from-literal=USERNAME=admin \
-  --from-literal=PASSWORD=${REGISTRY_PASSWORD} --from-literal=URL=${TINK_IP}:${PORT}
+kubectl create secret generic tink-registry --from-literal=USERNAME=admin \
+  --from-literal=PASSWORD=${REGISTRY_PASSWORD} \
+  --from-literal=URL=${REGISTRY_IP}
 ```
 
 - Deploy tink-server
 
 ```sh
+export TINK_IP=172.30.10.1
+
 kubectl create secret generic tink-credentials \
   --from-literal USERNAME=admin \
   --from-literal PASSWORD=$(head -c 12 /dev/urandom | sha256sum | cut -d' ' -f1)
@@ -118,10 +152,10 @@ EOF
 kubectl create -f tink-server.yaml
 
 kubectl create secret generic tink-server \
-  --from-literal USERNAME=$(kubectl get secret -l app=tink-server -o jsonpath='{.items[0].data.USERNAME}' | base64 -d) \
-  --from-literal PASSWORD=$(kubectl get secret -l app=tink-server -o jsonpath='{.items[0].data.PASSWORD}' | base64 -d) \
-  --from-literal GRPC_AUTHORITY=${TINK_IP}:$(kubectl get services tink-server -o jsonpath='{.spec.ports[?(@.targetPort=="grpc-authority")].nodePort}')
-  --from-literal CERT_URL=http://${TINK_IP}:$(kubectl get services tink-server -o jsonpath='{.spec.ports[?(@.targetPort=="http-authority")].nodePort}')/cert \
+  --from-literal USERNAME=$(kubectl get secret tink-credentials -o jsonpath='{.data.USERNAME}' | base64 -d) \
+  --from-literal PASSWORD=$(kubectl get secret tink-credentials -o jsonpath='{.data.PASSWORD}' | base64 -d) \
+  --from-literal GRPC_AUTHORITY=${TINK_IP}:$(kubectl get services tink-server -o jsonpath='{.spec.ports[?(@.targetPort=="grpc-authority")].port}') \
+  --from-literal CERT_URL=http://${TINK_IP}:$(kubectl get services tink-server -o jsonpath='{.spec.ports[?(@.targetPort=="http-authority")].port}')/cert
 ```
 
 - Deploy hegel
@@ -134,13 +168,55 @@ kubectl create -f hegel.yaml
 
 ```sh
 kubectl create -f nginx.yaml
+
 kubectl create secret generic tink-mirror \
-  --from-literal URL=http://${TINK_IP}/$(kubectl get services tink-mirror -o jsonpath='{.spec.ports[?(@.targetPort=="http")].nodePort}')
+  --from-literal URL=http://$(kubectl get services tink-mirror -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
 ```
 
 - Bring up boots
 
 ```sh
+export BOOTS_IP=172.30.10.100
+
+# create the service first
+cat << EOF | kubectl create -f -
+apiVersion: v1
+kind: Service
+metadata:
+  name: boots-udp
+spec:
+  type: LoadBalancer
+  selector:
+    app: boots
+  loadBalancerIP: ${BOOTS_IP}
+  externalTrafficPolicy: Local
+  ports:
+  - name: dhcp
+    port: 67
+    protocol: UDP
+    targetPort: dhcp
+  - name: tftp
+    port: 69
+    protocol: UDP
+    targetPort: tftp
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: boots-tcp
+spec:
+  type: LoadBalancer
+  selector:
+    app: boots
+  ports:
+  - name: http
+    port: 80
+    targetPort: http
+EOF
+
+kubectl create secret generic tink-boots \
+  --from-literal IP=$(kubectl get services boots-udp -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+
 kubectl create -f boots.yaml
 ```
 
