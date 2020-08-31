@@ -19,11 +19,13 @@ spec:
           limits:
             memory: "128Mi"
             cpu: "500m"
-        command: 
-        - -dhcp-addr 0.0.0.0:67
-        - -tftp-addr 0.0.0.0:69
-        - -http-addr 0.0.0.0:80
-        - -log-level DEBUG
+        command:
+        - /boots
+        - -dhcp-addr=0.0.0.0:67
+        - -tftp-addr=0.0.0.0:69
+        - -http-addr=0.0.0.0:80
+        - -syslog-addr=0.0.0.0:514
+        - -log-level=DEBUG
         envFrom:
         - prefix: MIRROR_BASE_
           secretRef:
@@ -35,6 +37,11 @@ spec:
           secretRef:
             name: tink-server
         env:
+        - name: PUBLIC_IP
+          valueFrom:
+            secretKeyRef:
+              name: tink-boots
+              key: IP
         - name: API_AUTH_TOKEN
           value: ignored
         - name: API_CONSUMER_TOKEN
