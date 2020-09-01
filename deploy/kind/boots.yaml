@@ -64,6 +64,81 @@ spec:
           value: $(REGISTRY_URL)
         ports:
         - containerPort: 80
+          name: http
+          protocol: TCP
+        - containerPort: 67
+          name: dhcp
+          protocol: UDP
+        - containerPort: 69
+          name: tftp
+          protocol: UDP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: boots-host
+spec:
+  selector:
+    matchLabels:
+      app: boots-host
+  template:
+    metadata:
+      labels:
+        app: boots-host
+    spec:
+      containers:
+      - name: boots
+        image: quay.io/tinkerbell/boots:latest
+        imagePullPolicy: IfNotPresent
+        resources:
+          limits:
+            memory: "128Mi"
+            cpu: "500m"
+        command:
+        - /boots
+        - -dhcp-addr=0.0.0.0:67
+        - -tftp-addr=0.0.0.0:69
+        - -http-addr=0.0.0.0:80
+        - -syslog-addr=0.0.0.0:514
+        - -log-level=DEBUG
+        envFrom:
+        - prefix: MIRROR_BASE_
+          secretRef:
+            name: tink-mirror
+        - prefix: REGISTRY_
+          secretRef:
+            name: tink-registry
+        - prefix: TINKERBELL_
+          secretRef:
+            name: tink-server
+        env:
+        - name: PUBLIC_IP
+          valueFrom:
+            secretKeyRef:
+              name: tink-boots
+              key: IP
+        - name: API_AUTH_TOKEN
+          value: ignored
+        - name: API_CONSUMER_TOKEN
+          value: ignored
+        - name: FACILITY_CODE
+          value: onprem
+        - name: PACKET_ENV
+          value: testing
+        - name: PACKET_VERSION
+          value: ignored
+        - name: ROLLBAR_DISABLE
+          value: "1"
+        - name: ROLLBAR_TOKEN
+          value: ignored
+        - name: DNS_SERVERS
+          value: "8.8.8.8"
+        - name: DATA_MODEL_VERSION
+          value: "1"
+        - name: DOCKER_REGISTRY
+          value: $(REGISTRY_URL)
+        ports:
+        - containerPort: 80
           hostPort: 80
           name: http
           protocol: TCP

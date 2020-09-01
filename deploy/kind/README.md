@@ -17,38 +17,25 @@ docker network create -d=bridge --subnet 172.30.0.0/16 --ip-range 172.30.100.0/2
   -o com.docker.network.bridge.name=tink-dev \
   -o com.docker.network.bridge.enable_icc=1 \
   -o com.docker.network.bridge.host_binding_ipv4=0.0.0.0 \
+  -o com.docker.network.bridge.enable_ip_masquerade=false \
   tink-dev
 ```
 
 - Bring up a new kind cluster
 
 ```sh
-KIND_EXPERIMENTAL_DOCKER_NETWORK=tink-dev kind create cluster --name tink-dev
+KIND_EXPERIMENTAL_DOCKER_NETWORK=tink-dev kind create cluster --name tink-dev 
 ```
-
-TODO: Update above command to not deploy kubenet and then deploy Calico for CNI(https://alexbrand.dev/post/creating-a-kind-cluster-with-calico-networking/), this is needed
-because kindnet is overriding the externalTrafficPolicy of Local on the boots-udp service, causing
-boots not to see the sourceIP correctly, or possibly use cilium based on: https://docs.cilium.io/en/v1.8/gettingstarted/kind/
-
 
 - Install MetalLB (from metallb.universe.tf/installation/)
 
 ```sh
-kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/v0.9.3/manifests/namespace.yaml
-kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/v0.9.3/manifests/metallb.yaml
-# On first install only
-kubectl create secret generic -n metallb-system memberlist --from-literal=secretkey="$(openssl rand -base64 128)"
-```
-
-- Add the metallb configuration
-
-```sh
+# create the metal-lb config
 cat << EOF | kubectl create -f -
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  namespace: metallb-system
-  name: config
+  name: metallb-config
 data:
   config: |
     address-pools:
@@ -57,13 +44,15 @@ data:
       addresses:
       - 172.30.10.0-172.30.10.255
 EOF
+
+helm repo add bitnami https://charts.bitnami.com/bitnami
+helm install lb --set existingConfigMap=metallb-config bitnami/metallb
 ```
 
 - Install a PostgreSQL DB using the bitnami helm chart (NOTE: this is not an ha db, bitnami does have a postgresql-ha that could be used for that)
 
 ```sh
 kubectl create configmap db-init --from-file=../db/tinkerbell-init.sql
-helm repo add bitnami https://charts.bitnami.com/bitnami
 helm install db --set postgresqlUsername=tinkerbell,postgresqlDatabase=tinkerbell,initdbScriptsConfigMap=db-init bitnami/postgresql
 ```
 
@@ -97,10 +86,10 @@ metadata:
 spec:
   secretName: registry-server-certificate
   dnsNames:
-  - tink-docker-registry
-  - tink-docker-registry.default
-  - tink-docker-registry.default.svc
-  - tink-docker-registry.default.svc.cluster.local
+  - registry-docker-registry
+  - registry-docker-registry.default
+  - registry-docker-registry.default.svc
+  - registry-docker-registry.default.svc.cluster.local
   ipAddresses:
   - ${REGISTRY_IP}
   issuerRef:
@@ -110,7 +99,7 @@ spec:
 EOF
 
 helm repo add stable https://kubernetes-charts.storage.googleapis.com/
-helm install tink stable/docker-registry \
+helm install registry stable/docker-registry \
   --set persistence.enabled=true,service.type=LoadBalancer,service.LoadBalancerIP=${REGISTRY_IP} \
   --set tlsSecretName=registry-server-certificate \
   --set secrets.htpasswd=$(docker run --entrypoint htpasswd registry:2.6 -Bbn admin ${REGISTRY_PASSWORD})
