@@ -17,7 +17,7 @@ docker network create -d=bridge --subnet 172.30.0.0/16 --ip-range 172.30.100.0/2
   -o com.docker.network.bridge.name=tink-dev \
   -o com.docker.network.bridge.enable_icc=1 \
   -o com.docker.network.bridge.host_binding_ipv4=0.0.0.0 \
-  -o com.docker.network.bridge.enable_ip_masquerade=false \
+  -o com.docker.network.bridge.enable_ip_masquerade=true \
   tink-dev
 ```
 
