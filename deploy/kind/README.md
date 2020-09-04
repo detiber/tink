@@ -7,6 +7,7 @@ Registry configuration roughly cribbed from https://www.civo.com/learn/set-up-a-
 - [kind](https://kind.sigs.k8s.io/) (v0.8.0+, Tested with v0.8.1)
 - kubectl
 - [helm](https://helm.sh/docs/intro/quickstart/) (v3+, tested with v3.3.0)
+- If running Fedora 32, make sure that firewalld (if not disabled), is configured to use the iptables backend (since moby-engine/docker does not support nftables at the time this document was written) and you have not enabled masquerading on the active firewalld zone (likely FedoraWorkstation).
 
 ## Setup
 
