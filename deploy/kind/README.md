@@ -70,7 +70,42 @@ helm install \
 
 # TODD: wait for deployment
 
-kubectl create -f self-signed-issuer.yaml
+# create the self-signed issuer
+cat << EOF | kubectl create -f -
+apiVersion: cert-manager.io/v1beta1
+kind: Issuer
+metadata:
+  name: selfsigned-issuer
+spec:
+  selfSigned: {}
+EOF
+
+# create the CA keypair
+cat << EOF | kubectl create -f -
+apiVersion: cert-manager.io/v1beta1
+kind: Certificate
+metadata:
+  name: tink-certificate-authority
+spec:
+  secretName: tink-certificate-authority
+  commonName: tink-certificate-authority
+  isCA: true
+  issuerRef:
+    name: selfsigned-issuer
+    kind: Issuer
+    group: cert-manager.io
+EOF
+
+# create the CA issuer
+cat << EOF | kubectl create -f -
+apiVersion: cert-manager.io/v1beta1
+kind: Issuer
+metadata:
+  name: tink-ca-issuer
+spec:
+  ca:
+    secretName: tink-certificate-authority
+EOF
 ```
 
 - Install the registry
@@ -94,7 +129,7 @@ spec:
   ipAddresses:
   - ${REGISTRY_IP}
   issuerRef:
-    name: selfsigned-issuer
+    name: tink-ca-issuer
     kind: Issuer
     group: cert-manager.io
 EOF
@@ -102,12 +137,15 @@ EOF
 helm repo add stable https://kubernetes-charts.storage.googleapis.com/
 helm install registry stable/docker-registry \
   --set persistence.enabled=true,service.type=LoadBalancer,service.LoadBalancerIP=${REGISTRY_IP} \
-  --set tlsSecretName=registry-server-certificate \
+  --set service.port=443,tlsSecretName=registry-server-certificate \
   --set secrets.htpasswd=$(docker run --entrypoint htpasswd registry:2.6 -Bbn admin ${REGISTRY_PASSWORD})
 
 kubectl create secret generic tink-registry --from-literal=USERNAME=admin \
   --from-literal=PASSWORD=${REGISTRY_PASSWORD} \
   --from-literal=URL=${REGISTRY_IP}
+
+
+# TODO: pull, tag, and push the hello-world image
 ```
 
 - Deploy tink-server
@@ -134,7 +172,7 @@ spec:
   ipAddresses:
   - ${TINK_IP}
   issuerRef:
-    name: selfsigned-issuer
+    name: tink-ca-issuer
     kind: Issuer
     group: cert-manager.io
 EOF
@@ -166,46 +204,49 @@ kubectl create secret generic tink-mirror \
 - Bring up boots
 
 ```sh
-export BOOTS_IP=172.30.10.100
-
+#export BOOTS_IP=172.30.10.100
+#
 # create the service first
-cat << EOF | kubectl create -f -
-apiVersion: v1
-kind: Service
-metadata:
-  name: boots-udp
-spec:
-  type: LoadBalancer
-  selector:
-    app: boots
-  loadBalancerIP: ${BOOTS_IP}
-  externalTrafficPolicy: Local
-  ports:
-  - name: dhcp
-    port: 67
-    protocol: UDP
-    targetPort: dhcp
-  - name: tftp
-    port: 69
-    protocol: UDP
-    targetPort: tftp
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: boots-tcp
-spec:
-  type: LoadBalancer
-  selector:
-    app: boots
-  ports:
-  - name: http
-    port: 80
-    targetPort: http
-EOF
+# cat << EOF | kubectl create -f -
+# apiVersion: v1
+# kind: Service
+# metadata:
+#   name: boots-udp
+# spec:
+#   type: LoadBalancer
+#   selector:
+#     app: boots
+#   loadBalancerIP: ${BOOTS_IP}
+#   externalTrafficPolicy: Local
+#   ports:
+#   - name: dhcp
+#     port: 67
+#     protocol: UDP
+#     targetPort: dhcp
+#   - name: tftp
+#     port: 69
+#     protocol: UDP
+#     targetPort: tftp
+# ---
+# apiVersion: v1
+# kind: Service
+# metadata:
+#   name: boots-tcp
+# spec:
+#   type: LoadBalancer
+#   selector:
+#     app: boots
+#   loadBalancerIP: ${BOOTS_HTTP_IP}
+#   externalTrafficPolicy: Local
+#   ports:
+#   - name: http
+#     port: 80
+#     targetPort: http
+# EOF
 
-kubectl create secret generic tink-boots \
-  --from-literal IP=$(kubectl get services boots-udp -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+# kubectl create secret generic tink-boots \
+#   --from-literal IP=$(kubectl get services boots-udp -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+# ')
 
 kubectl create -f boots.yaml
 ```
@@ -238,7 +279,7 @@ cat > hardware-data.json <<EOF
           "arch": "x86_64",
           "ip": {
             "address": "172.30.0.5",
-            "gateway": "172.30.0.1",
+            "gateway": "172.30.100.1",
             "netmask": "255.255.0.0"
           },
           "mac": "08:00:27:00:00:01",
