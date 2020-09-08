@@ -204,50 +204,6 @@ kubectl create secret generic tink-mirror \
 - Bring up boots
 
 ```sh
-#export BOOTS_IP=172.30.10.100
-#
-# create the service first
-# cat << EOF | kubectl create -f -
-# apiVersion: v1
-# kind: Service
-# metadata:
-#   name: boots-udp
-# spec:
-#   type: LoadBalancer
-#   selector:
-#     app: boots
-#   loadBalancerIP: ${BOOTS_IP}
-#   externalTrafficPolicy: Local
-#   ports:
-#   - name: dhcp
-#     port: 67
-#     protocol: UDP
-#     targetPort: dhcp
-#   - name: tftp
-#     port: 69
-#     protocol: UDP
-#     targetPort: tftp
-# ---
-# apiVersion: v1
-# kind: Service
-# metadata:
-#   name: boots-tcp
-# spec:
-#   type: LoadBalancer
-#   selector:
-#     app: boots
-#   loadBalancerIP: ${BOOTS_HTTP_IP}
-#   externalTrafficPolicy: Local
-#   ports:
-#   - name: http
-#     port: 80
-#     targetPort: http
-# EOF
-
-# kubectl create secret generic tink-boots \
-#   --from-literal IP=$(kubectl get services boots-udp -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
-# ')
-
 kubectl create -f boots.yaml
 ```
 

@@ -7,24 +7,6 @@ def worker_gui_enabled?
 end
 
 Vagrant.configure('2') do |config|
-
-  config.vm.define :provisioner do |provisioner|
-    provisioner.vm.box = 'generic/ubuntu1804'
-    provisioner.vm.hostname = 'provisioner'
-    provisioner.vm.network :public_network,
-                        ip: "172.30.0.100",
-                        libvirt__netmask: "255.255.0.0",
-                        dev: "tink-dev",
-                        mode: "bridge",
-                        type: "bridge"
-
-    provisioner.vm.provider :libvirt do |lv, override|
-      lv.memory = 2*1024
-      lv.cpus = 2
-      lv.cpu_mode = 'host-passthrough'
-    end
-  end
-
   config.vm.define "worker" do |worker|
     worker.vm.box = nil
     worker.vm.network :public_network, 
