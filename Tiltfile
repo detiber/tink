@@ -135,11 +135,6 @@ k8s_resource(
     resource_deps=['cert-manager']
 )
 
-# Wait for cert-manager to be ready
-#local("kubectl wait --for=condition=Available --timeout=300s -n cert-manager deployment/cert-manager")
-#local("kubectl wait --for=condition=Available --timeout=300s -n cert-manager deployment/cert-manager-cainjector")
-#local("kubectl wait --for=condition=Available --timeout=300s -n cert-manager deployment/cert-manager-webhook")
-
 # Deploy the CA and dependencies
 k8s_yaml('deploy/kind/tink-selfsigned-issuer.yaml')
 k8s_resource(
@@ -235,10 +230,6 @@ def generate_certificate(name, namespace="default", dnsNames=[], ipAddresses=[])
     k8s_yaml(encode_yaml(cert))
 
 
-# TODO: add live update to this docker build
-# TODO: add better ignore/only configuration for build
-# TODO: update to use a Dockerfile that does a multi-stage build
-#docker_build('quay.io/tinkerbell/tink', 'cmd/tink-server')
 local_resource(
     'tink-server-build',
     'CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o build/tink-server ./cmd/tink-server',
