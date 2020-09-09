@@ -35,23 +35,19 @@ func TestVagrantSetupGuide(t *testing.T) {
 		}
 	}()
 
-	_, err = machine.Exec(ctx, "cd /vagrant/deploy && source ../envrc && docker-compose up -d")
-	if err != nil {
+	if err = machine.Exec(ctx, "cd /vagrant/deploy && source ../envrc && docker-compose up -d"); err != nil {
 		t.Fatal(err)
 	}
 
-	_, err = machine.Exec(ctx, "docker pull hello-world")
-	if err != nil {
+	if err = machine.Exec(ctx, "docker pull hello-world"); err != nil {
 		t.Fatal(err)
 	}
 
-	_, err = machine.Exec(ctx, "docker tag hello-world 192.168.1.1/hello-world")
-	if err != nil {
+	if err = machine.Exec(ctx, "docker tag hello-world 192.168.1.1/hello-world"); err != nil {
 		t.Fatal(err)
 	}
 
-	_, err = machine.Exec(ctx, "docker push 192.168.1.1/hello-world")
-	if err != nil {
+	if err = machine.Exec(ctx, "docker push 192.168.1.1/hello-world"); err != nil {
 		t.Fatal(err)
 	}
 
