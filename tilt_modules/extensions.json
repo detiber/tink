@@ -1,0 +1,22 @@
+{
+  "Extensions": [
+    {
+      "Name": "helm_remote",
+      "GitCommitHash": "b8df6f5f3368ced855da56e002027a3bd1a61bdf",
+      "ExtensionRegistry": "https://github.com/tilt-dev/tilt-extensions",
+      "TimeFetched": "2020-09-08T13:12:32.638026665-04:00"
+    },
+    {
+      "Name": "min_k8s_version",
+      "GitCommitHash": "b8df6f5f3368ced855da56e002027a3bd1a61bdf",
+      "ExtensionRegistry": "https://github.com/tilt-dev/tilt-extensions",
+      "TimeFetched": "2020-09-08T13:26:30.133688039-04:00"
+    },
+    {
+      "Name": "min_tilt_version",
+      "GitCommitHash": "b8df6f5f3368ced855da56e002027a3bd1a61bdf",
+      "ExtensionRegistry": "https://github.com/tilt-dev/tilt-extensions",
+      "TimeFetched": "2020-09-08T13:27:26.647298022-04:00"
+    }
+  ]
+}

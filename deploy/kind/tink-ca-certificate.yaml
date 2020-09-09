@@ -1,0 +1,12 @@
+apiVersion: cert-manager.io/v1beta1
+kind: Certificate
+metadata:
+  name: tink-certificate-authority
+spec:
+  secretName: tink-certificate-authority
+  commonName: tink-certificate-authority
+  isCA: true
+  issuerRef:
+    name: selfsigned-issuer
+    kind: Issuer
+    group: cert-manager.io
