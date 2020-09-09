@@ -6,6 +6,9 @@ min_tilt_version('0.17')
 load('ext://min_k8s_version', 'min_k8s_version')
 min_k8s_version('1.16')
 
+# Load the extension for live updating
+load('ext://restart_process', 'docker_build_with_restart')
+
 # Load the remote helm dependencies
 load('ext://helm_remote', 'helm_remote')
 
@@ -235,7 +238,49 @@ def generate_certificate(name, namespace="default", dnsNames=[], ipAddresses=[])
 # TODO: add live update to this docker build
 # TODO: add better ignore/only configuration for build
 # TODO: update to use a Dockerfile that does a multi-stage build
-docker_build('quay.io/tinkerbell/tink', 'cmd/tink-server')
+#docker_build('quay.io/tinkerbell/tink', 'cmd/tink-server')
+local_resource(
+    'tink-server-build',
+    'CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o build/tink-server ./cmd/tink-server',
+    deps=[
+        'go.mod',
+        'go.sum',
+        'cmd/tink-server',
+        'db',
+        'grpc-server',
+        'http-server',
+        'metrics',
+        'pkg',
+        'protos'
+    ]
+)
+docker_build_with_restart(
+    'quay.io/tinkerbell/tink',
+    '.',
+    dockerfile_contents="""
+FROM gcr.io/distroless/base:debug as debug
+WORKDIR /
+COPY build/tink-server /tink-server
+ENTRYPOINT ["/tink-server"]
+""",
+    only=[
+        './build/tink-server',
+    ],
+    target='debug',
+    live_update=[
+        sync('./build/tink-server', '/tink-server')
+    ],
+    entrypoint=[
+        # Kubernetes deployment argments are ignored by
+        # the restart process helper, so need to include
+        # them here.
+        '/tink-server',
+        '--facility=onprem',
+        '--ca-cert=/certs/ca.crt',
+        '--tls-cert=/certs/tls.crt',
+        '--tls-key=/certs/tls.key'
+    ]
+)
 
 tink_ip = '172.30.10.1'
 tink_password = str(local("head -c 12 /dev/urandom | sha256sum | cut -d' ' -f1")).rstrip('\n')
