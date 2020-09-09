@@ -15,3 +15,6 @@ terraform.tfstate.backup
 **/.vagrant
 envrc
 deploy/state
+
+# Tilt
+.helm

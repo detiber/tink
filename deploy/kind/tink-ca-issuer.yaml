@@ -1,0 +1,7 @@
+apiVersion: cert-manager.io/v1beta1
+kind: Issuer
+metadata:
+  name: tink-ca-issuer
+spec:
+  ca:
+    secretName: tink-certificate-authority
