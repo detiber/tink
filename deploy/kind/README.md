@@ -215,7 +215,7 @@ TODO: better way to run this outside of the kind cluster
 kubectl run -it --command --rm --attach --image quay.io/tinkerbell/tink-cli:latest --env="TINKERBELL_GRPC_AUTHORITY=tink-server:42113" --env="TINKERBELL_CERT_URL=http://tink-server:42114/cert" cli /bin/ash
 ```
 
-## Create the hardware
+## Create the hardware, template, and workflow
 
 ```sh
 cat > hardware-data.json <<EOF
@@ -250,9 +250,32 @@ cat > hardware-data.json <<EOF
   }
 }
 EOF
+
+tink hardware push --file hardware-data.json
+
+cat > hello-world.yml  <<EOF
+version: "0.1"
+name: hello_world_workflow
+global_timeout: 600
+tasks:
+  - name: "hello world"
+    worker: "{{.device_1}}"
+    actions:
+      - name: "hello_world"
+        image: hello-world
+        timeout: 60
+EOF
+
+tink template create -n hello-world -p hello-world.yaml
+
+tink workflow create -t <template id> -r '{"device_1":"08:00:27:00:00:01"}'
 ```
 
-Continue with rest of the steps from the local quickstart
+## Bring up the worker VM
+
+```sh
+vagrant up
+```
 
 ## Teardown
 
