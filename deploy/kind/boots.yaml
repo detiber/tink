@@ -37,7 +37,7 @@ spec:
         - name: PUBLIC_IP
           value: 172.30.0.1
         - name: MIRROR_BASE_URL
-          value: http://tink-mirror
+          value: http://172.30.0.2
         - name: API_AUTH_TOKEN
           value: ignored
         - name: API_CONSUMER_TOKEN
