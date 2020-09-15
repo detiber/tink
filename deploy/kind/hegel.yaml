@@ -50,7 +50,6 @@ kind: Service
 metadata:
   name: hegel
 spec:
-  type: NodePort
   selector:
     app: hegel
   ports:
