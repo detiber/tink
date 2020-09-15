@@ -86,7 +86,6 @@ kind: Service
 metadata:
   name: tink-server
 spec:
-  type: LoadBalancer
   selector:
     app: tink-server
   ports:
@@ -96,3 +95,4 @@ spec:
   - name: http-authority
     port: 42114
     targetPort: http-authority
+    
