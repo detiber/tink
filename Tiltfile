@@ -19,24 +19,52 @@ config.define_string('hegel_repo_path', args=True, usage='path to hegel reposito
 cfg = config.parse()
 hegel_repo_path = cfg.get('hegel_repo_path', '../hegel')
 
+def generate_certificate(name, namespace="default", dnsNames=[], ipAddresses=[]):
+    cert = {
+        'apiVersion': 'cert-manager.io/v1',
+        'kind': 'Certificate',
+        'metadata': {
+            'name': name,
+            'namespace': namespace,
+        },
+        'spec': {
+            'secretName': name,
+            'dnsNames': dnsNames,
+            'ipAddresses': ipAddresses,
+            'issuerRef': {
+                'name': 'tink-ca-issuer',
+                'kind': 'Issuer',
+                'group': 'cert-manager.io'
+            }
+        }
+    }
+    k8s_yaml(encode_yaml(cert))
+
 # Multus
 k8s_yaml('deploy/kind/multus.yaml')
 cni_config = {
     'cniVersion': '0.3.1',
     'name': 'tink-dev',
-    'type': 'bridge',
-    'capabilities': {
-        'ips': True,
-    },
-    'bridge': 'tink-dev',
-    'ipam': {
-        'type': 'static',
-        'routes': [
-            {
-                'dst': '172.30.0.0/16',
+    'plugins': [
+        {
+            'type': 'bridge',
+            'capabilities': {
+                'ips': True,
+            },
+            'bridge': 'tink-dev',
+            'ipam': {
+                'type': 'static',
+                'routes': [
+                    {
+                        'dst': '172.30.0.0/16',
+                    }
+                ]
             }
-        ]
-    }
+        },
+        {
+            'type': 'kind-no-snat-interface'
+        }
+    ]
 }
 multus_config = {
     'apiVersion': 'k8s.cni.cncf.io/v1',
@@ -118,54 +146,6 @@ k8s_resource(
     resource_deps=['virt-operator']    
 )
 
-
-# MetalLB
-k8s_yaml(encode_yaml(decode_yaml("""
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: metallb-config
-  namespace: metallb
-data:
-  config: |
-    address-pools:
-    - name: default
-      protocol: layer2
-      addresses:
-      - 172.30.10.0-172.30.10.255
-""")))
-helm_remote(
-    'metallb',
-    namespace='metallb',
-    create_namespace=True,
-    repo_url='https://charts.bitnami.com/bitnami',
-    repo_name='metallb',
-    set=['existingConfigMap=metallb-config']
-)
-k8s_resource(
-    workload='metallb-controller',
-    objects=[
-        'metallb:namespace',
-        'metallb-config:configmap',
-        'metallb-controller:serviceaccount',
-        'metallb-controller:podsecuritypolicy',
-        'metallb-config-watcher:role',
-        'metallb-pod-lister:role',
-        'metallb-config-watcher:rolebinding',
-        'metallb-pod-lister:rolebinding',
-        'metallb-memberlist:secret'
-    ],
-    resource_deps=['multus']
-
-)
-k8s_resource(
-    workload='metallb-speaker',
-    objects=[
-        'metallb-speaker:serviceaccount',
-        'metallb-speaker:podsecuritypolicy'
-    ],
-    resource_deps=['metallb-controller']
-)
 
 # PostgreSQL
 db_init_script = str(read_file('deploy/db/tinkerbell-init.sql')).rstrip('\n').replace(',', '\\,')
@@ -269,24 +249,32 @@ k8s_resource(
     resource_deps=['tink-ca-certificate']    
 )
 
-registry_ip = '172.30.10.0'
+registry_ip = '172.30.0.3'
 registry_password = local_output("head -c 12 /dev/urandom | sha256sum | cut -d' ' -f1")
-registry_cert = read_yaml('deploy/kind/tink-registry-certificate.yaml')
-registry_cert['spec']['ipAddresses'] = [registry_ip]
 registry_htpasswd = local_output('docker run --entrypoint htpasswd registry:2.6 -Bbn admin '+registry_password)
 
-k8s_yaml(encode_yaml(registry_cert))
+generate_certificate(
+    name='registry-server-certificate',
+    dnsNames=[
+        'docker-registry',
+        'docker-registry.default',
+        'docker-registry.default.svc',
+        'docker-registry.default.svc.cluster.local',
+    ],
+    ipAddresses=[registry_ip]
+)
+
+
 helm_remote(
     'docker-registry',
     repo_url='https://kubernetes-charts.storage.googleapis.com/',
     repo_name='docker-registry',
     set=[
         'persistence.enabled=true',
-        'service.type=LoadBalancer',
-        'service.LoadBalancerIP='+registry_ip,
         'service.port=443',
         'tlsSecretName=registry-server-certificate',
-        'secrets.htpasswd='+registry_htpasswd
+        'secrets.htpasswd='+registry_htpasswd,
+        'podAnnotations.k8s\\.v1\\.cni\\.cncf\\.io/networks=[{"interface":"net1"\\,"mac":"08:00:29:00:00:00"\\,"ips":["'+registry_ip+'/16"]\\,"name":"tink-dev"\\,"namespace":"default"}]'
     ]
 )
 
@@ -315,32 +303,9 @@ k8s_resource(
         'tink-registry:secret'
     ],
     resource_deps=[
-        'tink-ca-issuer',
-        'metallb-controller'
+        'tink-ca-issuer'
     ]
 )
-
-def generate_certificate(name, namespace="default", dnsNames=[], ipAddresses=[]):
-    cert = {
-        'apiVersion': 'cert-manager.io/v1',
-        'kind': 'Certificate',
-        'metadata': {
-            'name': name,
-            'namespace': namespace,
-        },
-        'spec': {
-            'secretName': name,
-            'dnsNames': dnsNames,
-            'ipAddresses': ipAddresses,
-            'issuerRef': {
-                'name': 'tink-ca-issuer',
-                'kind': 'Issuer',
-                'group': 'cert-manager.io'
-            }
-        }
-    }
-    k8s_yaml(encode_yaml(cert))
-
 
 local_resource(
     'tink-server-build',
@@ -420,7 +385,6 @@ k8s_resource(
     ],
     resource_deps=[
         'tink-ca-issuer',
-        'metallb-controller',
         'db'
     ]
 )
@@ -455,3 +419,12 @@ k8s_resource(
         'tink-server',
     ]
 )
+
+# TODO: preload appropriate images into registry (depends on templates)
+# TODO: preload hardware data (depends on worker definitions)
+# TODO: preload templates and workflows
+# TODO: where does pb&j fit into this?
+# TODO: should portal fit into this?
+
+# TODO: ensure secret, password, and other generated items are only generated once
+# TODO: factor out some of the dependencies into library files
