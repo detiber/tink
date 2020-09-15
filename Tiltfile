@@ -428,3 +428,4 @@ k8s_resource(
 
 # TODO: ensure secret, password, and other generated items are only generated once
 # TODO: factor out some of the dependencies into library files
+# TODO: improve cleanup of resources, some things are being left behind making tilt up/tilt down/tilt up not work correctly
