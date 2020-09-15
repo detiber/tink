@@ -9,8 +9,110 @@ min_k8s_version('1.16')
 # Load the extension for live updating
 load('ext://restart_process', 'docker_build_with_restart')
 
-# Load the remote helm dependencies
+# Load the extension for helm_remote
 load('ext://helm_remote', 'helm_remote')
+
+# Load the extension for local_output
+load('ext://local_output', 'local_output')
+
+# Multus
+k8s_yaml('deploy/kind/multus.yaml')
+cni_config = {
+    'cniVersion': '0.3.1',
+    'name': 'tink-dev',
+    'type': 'bridge',
+    'capabilities': {
+        'ips': True,
+    },
+    'bridge': 'tink-dev',
+    'ipam': {
+        'type': 'static',
+        'routes': [
+            {
+                'dst': '172.30.0.0/16',
+            }
+        ]
+    }
+}
+multus_config = {
+    'apiVersion': 'k8s.cni.cncf.io/v1',
+    'kind': 'NetworkAttachmentDefinition',
+    'metadata': {
+        'name': 'tink-dev',
+    },
+    'spec': {
+        'config': encode_json(cni_config)
+    }
+}  
+k8s_yaml(encode_yaml(multus_config))
+cni_config = {
+    'cniVersion': '0.3.1',
+    'name': 'tink-dev-no-ip',
+    'plugins': [
+        {
+            'type': 'bridge',
+            'bridge': 'tink-dev',
+        },
+        {
+            'type': 'route-override',
+            'addroutes': [
+                {
+                    'dst': '172.30.0.0/16'
+                }
+            ]
+        },
+        {
+            'type': 'kind-no-snat-interface'
+        }
+    ]
+}
+multus_config = {
+    'apiVersion': 'k8s.cni.cncf.io/v1',
+    'kind': 'NetworkAttachmentDefinition',
+    'metadata': {
+        'name': 'tink-dev-no-ip',
+    },
+    'spec': {
+        'config': encode_json(cni_config)
+    }
+}  
+k8s_yaml(encode_yaml(multus_config))
+k8s_resource(
+    workload='kube-multus-ds',
+    new_name='multus',
+    objects=[
+        'multus:serviceaccount',
+        'network-attachment-definitions.k8s.cni.cncf.io:customresourcedefinition',
+        'multus:clusterrole',
+        'multus:clusterrolebinding',
+        'tink-dev:networkattachmentdefinition',
+        'tink-dev-no-ip:networkattachmentdefinition'
+    ],
+)
+
+# KubeVirt
+k8s_yaml('deploy/kind/kubevirt-operator.yaml')
+k8s_resource(
+     workload='virt-operator',
+     objects=[
+         'kubevirt:namespace',
+         'kubevirts.kubevirt.io:customresourcedefinition',
+         'kubevirt-operator:serviceaccount',
+         'kubevirt-operator:role',
+         'kubevirt-operator:clusterrole',
+         'kubevirt-operator-rolebinding:rolebinding',
+         'kubevirt-operator:clusterrolebinding',
+         'kubevirt-cluster-critical:priorityclass'
+     ]
+)
+
+k8s_yaml('deploy/kind/kubevirt-cr.yaml')
+k8s_resource(
+    new_name='kubevirt',
+    objects=['kubevirt:kubevirt'],
+    resource_deps=['virt-operator']    
+)
+
 
 # MetalLB
 k8s_yaml(encode_yaml(decode_yaml("""
@@ -36,13 +138,6 @@ helm_remote(
     set=['existingConfigMap=metallb-config']
 )
 k8s_resource(
-    workload='metallb-speaker',
-    objects=[
-        'metallb-speaker:serviceaccount',
-        'metallb-speaker:podsecuritypolicy'
-    ]
-)
-k8s_resource(
     workload='metallb-controller',
     objects=[
         'metallb:namespace',
@@ -55,6 +150,14 @@ k8s_resource(
         'metallb-pod-lister:rolebinding',
         'metallb-memberlist:secret'
     ]
+)
+k8s_resource(
+    workload='metallb-speaker',
+    objects=[
+        'metallb-speaker:serviceaccount',
+        'metallb-speaker:podsecuritypolicy'
+    ],
+    resource_deps=['metallb-controller']
 )
 
 # PostgreSQL
@@ -158,10 +261,10 @@ k8s_resource(
 )
 
 registry_ip = '172.30.10.0'
-registry_password = str(local("head -c 12 /dev/urandom | sha256sum | cut -d' ' -f1")).rstrip('\n')
+registry_password = local_output("head -c 12 /dev/urandom | sha256sum | cut -d' ' -f1")
 registry_cert = read_yaml('deploy/kind/tink-registry-certificate.yaml')
 registry_cert['spec']['ipAddresses'] = [registry_ip]
-registry_htpasswd = str(local('docker run --entrypoint htpasswd registry:2.6 -Bbn admin '+registry_password))
+registry_htpasswd = local_output('docker run --entrypoint htpasswd registry:2.6 -Bbn admin '+registry_password)
 
 k8s_yaml(encode_yaml(registry_cert))
 helm_remote(
@@ -273,8 +376,7 @@ ENTRYPOINT ["/tink-server"]
     ]
 )
 
-tink_ip = '172.30.10.1'
-tink_password = str(local("head -c 12 /dev/urandom | sha256sum | cut -d' ' -f1")).rstrip('\n')
+tink_password = local_output("head -c 12 /dev/urandom | sha256sum | cut -d' ' -f1")
 
 generate_certificate(
     name='tink-server-certificate',
@@ -284,7 +386,6 @@ generate_certificate(
         'tink-server.default.svc',
         'tink-server.default.svc.cluster.local',
     ],
-    ipAddresses=[tink_ip],
 )
 
 tink_secret = {
@@ -317,6 +418,8 @@ k8s_resource(
 # TODO: Create tink-server secret for use in other components
 
 # TODO: hegel, should be able to use local repo if configured or use upstream image otherwise
+#k8s_yaml('deploy/kind/hegel.yaml')
+include('../hegel/Tiltfile')
 
 k8s_yaml('deploy/kind/nginx.yaml')
 k8s_resource(
@@ -328,3 +431,8 @@ k8s_resource(
 )
 
 # TODO: boots, should be able to use local repo if configured or use upstream image otherwise
+k8s_yaml('deploy/kind/boots.yaml')
+k8s_resource(
+    workload='boots',
+    resource_deps=['tink-server']
+)

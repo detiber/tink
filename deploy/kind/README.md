@@ -235,7 +235,6 @@ cat > hardware-data.json <<EOF
           "arch": "x86_64",
           "ip": {
             "address": "172.30.0.5",
-            "gateway": "172.30.100.1",
             "netmask": "255.255.0.0"
           },
           "mac": "08:00:27:00:00:01",
