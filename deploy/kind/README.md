@@ -265,7 +265,7 @@ tasks:
         timeout: 60
 EOF
 
-tink template create -n hello-world -p hello-world.yaml
+tink template create -n hello-world -p hello-world.yml
 
 tink workflow create -t <template id> -r '{"device_1":"08:00:27:00:00:01"}'
 ```

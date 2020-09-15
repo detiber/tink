@@ -15,6 +15,10 @@ load('ext://helm_remote', 'helm_remote')
 # Load the extension for local_output
 load('ext://local_output', 'local_output')
 
+config.define_string('hegel_repo_path', args=True, usage='path to hegel repository')
+cfg = config.parse()
+hegel_repo_path = cfg.get('hegel_repo_path', '../hegel')
+
 # Multus
 k8s_yaml('deploy/kind/multus.yaml')
 cni_config = {
@@ -103,7 +107,8 @@ k8s_resource(
          'kubevirt-operator-rolebinding:rolebinding',
          'kubevirt-operator:clusterrolebinding',
          'kubevirt-cluster-critical:priorityclass'
-     ]
+     ],
+     resource_deps=['multus']
 )
 
 k8s_yaml('deploy/kind/kubevirt-cr.yaml')
@@ -149,7 +154,9 @@ k8s_resource(
         'metallb-config-watcher:rolebinding',
         'metallb-pod-lister:rolebinding',
         'metallb-memberlist:secret'
-    ]
+    ],
+    resource_deps=['multus']
+
 )
 k8s_resource(
     workload='metallb-speaker',
@@ -179,7 +186,8 @@ k8s_resource(
     objects=[
         'db-postgresql-init-scripts:configmap',
         'db-postgresql:secret'
-    ]
+    ],
+    resource_deps=['multus']
 )
 
 # cert-manager
@@ -217,7 +225,8 @@ k8s_resource(
         'cert-manager-controller-orders:clusterrole:cert-manager',
         'cert-manager-controller-challenges:clusterrole:cert-manager',
         'cert-manager-controller-ingress-shim:clusterrole:cert-manager'
-    ]
+    ],
+    resource_deps=['multus']
 )
 k8s_resource(
     workload='cert-manager-webhook',
@@ -411,15 +420,21 @@ k8s_resource(
     ],
     resource_deps=[
         'tink-ca-issuer',
-        'metallb-controller'
+        'metallb-controller',
+        'db'
     ]
 )
 
 # TODO: Create tink-server secret for use in other components
 
-# TODO: hegel, should be able to use local repo if configured or use upstream image otherwise
-#k8s_yaml('deploy/kind/hegel.yaml')
-include('../hegel/Tiltfile')
+def load_from_repo_with_fallback(path, fallback_yaml):
+    if os.path.exists(path):
+        include(os.path.join(path, 'Tiltfile'))
+    else:
+        k8s_yaml(fallback_yaml)
+
+# deploy hegel from locally checked out repo, falling back to static deployment
+load_from_repo_with_fallback(hegel_repo_path, 'deploy/kind/hegel.yaml')
 
 k8s_yaml('deploy/kind/nginx.yaml')
 k8s_resource(
@@ -427,12 +442,16 @@ k8s_resource(
     objects=[
         'webroot:persistentvolumeclaim',
     ],
-    resource_deps=['tink-server']
+    resource_deps=[
+        'tink-server',
+    ]
 )
 
 # TODO: boots, should be able to use local repo if configured or use upstream image otherwise
 k8s_yaml('deploy/kind/boots.yaml')
 k8s_resource(
     workload='boots',
-    resource_deps=['tink-server']
+    resource_deps=[
+        'tink-server',
+    ]
 )
