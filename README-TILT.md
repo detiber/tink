@@ -88,20 +88,24 @@ tink workflow create -t <template id> -r '{"device_1":"08:00:27:00:00:01"}'
 ## Load the hello-world image into the registry
 
 ```sh
-kubectl run -it --command --rm --attach --image docker --overrides='{ "apiVersion": "v1", "metadata": {"annotations": { "k8s.v1.cni.cncf.io/networks":"[{\"interface\":\"net1\",\"mac\":\"08:00:31:00:00:00\",\"ips\":[\"172.30.0.100/16\"],\"name\":\"tink-dev\",\"namespace\":\"default\"}]" } } }' docker-cli -- sh
+kubectl run -it --command --rm --attach --image quay.io/containers/skopeo:v1.1.1 --overrides='{ "apiVersion": "v1", "metadata": {"annotations": { "k8s.v1.cni.cncf.io/networks":"[{\"interface\":\"net1\",\"mac\":\"08:00:31:00:00:00\",\"ips\":[\"172.30.0.100/16\"],\"name\":\"tink-dev\",\"namespace\":\"default\"}]" } }, "spec": { "containers": [ { "name": "skopeo", "image": "quay.io/containers/skopeo:v1.1.1", "command": [ "sh" ], "tty": true, "stdin": true, "volumeMounts": [ { "name": "registry-creds", "mountPath": "/creds" } ] } ], "volumes": [ { "name": "registry-creds", "secret": { "secretName": "tink-registry" } } ] } }' skopeo -- sh
 
-# TODO configure the CA certificate
-# TODO fetch the registry password
-docker login 172.30.0.3:5000 --username admin --password <password>
-docker pull hello-world
-docker tag hello-world 172.30.0.3:5000/hello-world
-docker push 172.30.0.3:5000/hello-world
+skopeo copy --dest-tls-verify=false --dest-creds=admin:$(cat /creds/PASSWORD) docker://hello-world docker://$(cat /creds/URL)/hello-world
+skopeo copy --dest-tls-verify=false --dest-creds=admin:$(cat /creds/PASSWORD) docker://quay.io/tinkerbell/tink-worker:latest docker://$(cat /creds/URL)/tink-worker:latest
 ```
 
 ## Bring up the worker VM
 
 ```sh
 kubectl create -f deploy/kind/worker.yaml
+```
+
+## Watching the worker console
+
+If you want to watch the worker console, you can do so by downloading the `virt` plugin for `kubectl`
+
+```sh
+kubectl virt vnc worker
 ```
 
 ## Teardown
