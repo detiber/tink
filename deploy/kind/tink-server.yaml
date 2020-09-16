@@ -10,6 +10,8 @@ spec:
     metadata:
       labels:
         app: tink-server
+      annotations:
+        k8s.v1.cni.cncf.io/networks: '[{"interface":"net1","mac":"08:00:35:00:00:00","ips":["172.30.0.4/16"],"name":"tink-dev","namespace":"default"}]'
     spec:
       containers:
       - name: tink-server

@@ -15,9 +15,11 @@ load('ext://helm_remote', 'helm_remote')
 # Load the extension for local_output
 load('ext://local_output', 'local_output')
 
-config.define_string('hegel_repo_path', args=True, usage='path to hegel repository')
+config.define_string('boots_repo_path', args=False, usage='path to boots repository')
+config.define_string('hegel_repo_path', args=False, usage='path to hegel repository')
 cfg = config.parse()
 hegel_repo_path = cfg.get('hegel_repo_path', '../hegel')
+boots_repo_path = cfg.get('boots_repo_path', '../boots')
 
 def generate_certificate(name, namespace="default", dnsNames=[], ipAddresses=[]):
     cert = {
@@ -288,7 +290,7 @@ registry_secret = {
     'stringData': {
         'USERNAME': 'admin',
         'PASSWORD': registry_password,
-        'URL': registry_ip
+        'URL': registry_ip+':5000'
     }
 }  
 k8s_yaml(encode_yaml(registry_secret))
@@ -360,6 +362,9 @@ generate_certificate(
         'tink-server.default.svc',
         'tink-server.default.svc.cluster.local',
     ],
+    ipAddresses=[
+        '172.30.0.4'
+    ]
 )
 
 tink_secret = {
@@ -391,14 +396,18 @@ k8s_resource(
 
 # TODO: Create tink-server secret for use in other components
 
-def load_from_repo_with_fallback(path, fallback_yaml):
+def load_from_repo_with_fallback(path, workload_name, fallback_yaml, fallback_deps=[]):
     if os.path.exists(path):
         include(os.path.join(path, 'Tiltfile'))
     else:
         k8s_yaml(fallback_yaml)
+        k8s_resource(
+            workload=workload_name,
+            resource_deps=fallback_deps
+        )
 
 # deploy hegel from locally checked out repo, falling back to static deployment
-load_from_repo_with_fallback(hegel_repo_path, 'deploy/kind/hegel.yaml')
+load_from_repo_with_fallback(hegel_repo_path, 'hegel', 'deploy/kind/hegel.yaml', ['tink-server','tink-mirror'])
 
 k8s_yaml('deploy/kind/nginx.yaml')
 k8s_resource(
@@ -411,14 +420,8 @@ k8s_resource(
     ]
 )
 
-# TODO: boots, should be able to use local repo if configured or use upstream image otherwise
-k8s_yaml('deploy/kind/boots.yaml')
-k8s_resource(
-    workload='boots',
-    resource_deps=[
-        'tink-server',
-    ]
-)
+# deploy boots from locally checked out repo, falling back to static deployment
+load_from_repo_with_fallback(boots_repo_path, 'boots', 'deploy/kind/boots.yaml', ['tink-server'])
 
 # TODO: preload appropriate images into registry (depends on templates)
 # TODO: preload hardware data (depends on worker definitions)
