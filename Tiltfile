@@ -259,7 +259,7 @@ k8s_resource(
 )
 
 registry_ip = '172.30.0.3'
-registry_password = local_output("head -c 12 /dev/urandom | sha256sum | cut -d' ' -f1")
+registry_password = local_output("head -c 12 /dev/urandom | shasum -a 256 | cut -d' ' -f1")
 registry_htpasswd = local_output('docker run --entrypoint htpasswd registry:2.6 -Bbn admin '+registry_password)
 
 generate_certificate(
@@ -359,7 +359,7 @@ ENTRYPOINT ["/tink-server"]
     ]
 )
 
-tink_password = local_output("head -c 12 /dev/urandom | sha256sum | cut -d' ' -f1")
+tink_password = local_output("head -c 12 /dev/urandom | shasum -a 256 | cut -d' ' -f1")
 
 generate_certificate(
     name='tink-server-certificate',
