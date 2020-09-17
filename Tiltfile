@@ -142,10 +142,27 @@ k8s_resource(
      resource_deps=['multus']
 )
 
+# TODO: try to detect if kvm/virtio are supported and skip this step if they are
+kubevirt_config = {
+    'apiVersion': 'v1',
+    'kind': 'ConfigMap',
+    'metadata': {
+        'name': 'kubevirt-config',
+        'namespace': 'kubevirt'
+    },
+    'data': {
+      'debug.useEmulation': 'true'
+    }
+}
+k8s_yaml(encode_yaml(kubevirt_config))
+
 k8s_yaml('deploy/kind/kubevirt-cr.yaml')
 k8s_resource(
     new_name='kubevirt',
-    objects=['kubevirt:kubevirt'],
+    objects=[
+        'kubevirt:kubevirt',
+        'kubevirt-config:configmap:kubevirt'
+    ],
     resource_deps=['virt-operator']    
 )
 
