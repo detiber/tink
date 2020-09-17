@@ -404,8 +404,9 @@ k8s_resource(
 # TODO: Create tink-server secret for use in other components
 
 def load_from_repo_with_fallback(path, workload_name, fallback_yaml, fallback_deps=[]):
-    if os.path.exists(path):
-        include(os.path.join(path, 'Tiltfile'))
+    repoTiltfile = os.path.join(path, 'Tiltfile')
+    if os.path.exists(repoTiltfile):
+        include(repoTiltfile)
     else:
         k8s_yaml(fallback_yaml)
         k8s_resource(
@@ -437,6 +438,7 @@ load_from_repo_with_fallback(boots_repo_path, 'boots', 'deploy/kind/boots.yaml',
 # TODO: where does pb&j fit into this?
 # TODO: should portal fit into this?
 
+# TODO: rework Dockerfile so that it can be shared between release and Tilt, potentially can leverage [docker_build_sub](https://github.com/tilt-dev/tilt-extensions) Tilt extension
 # TODO: ensure secret, password, and other generated items are only generated once
 # TODO: factor out some of the dependencies into library files
 # TODO: improve cleanup of resources, some things are being left behind making tilt up/tilt down/tilt up not work correctly
