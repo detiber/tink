@@ -1,6 +1,6 @@
-# TODO: find actual minimum tilt version
+# Tilt >= v0.17.5 is required to handle escaping of colons in selector names
 load('ext://min_tilt_version', 'min_tilt_version')
-min_tilt_version('0.17')
+min_tilt_version('0.17.5')
 
 # We require at minimum CRD support, so need at least Kubernetes v1.16
 load('ext://min_k8s_version', 'min_k8s_version')
@@ -136,7 +136,8 @@ k8s_resource(
          'kubevirt-operator:clusterrole',
          'kubevirt-operator-rolebinding:rolebinding',
          'kubevirt-operator:clusterrolebinding',
-         'kubevirt-cluster-critical:priorityclass'
+         'kubevirt-cluster-critical:priorityclass',
+         'kubevirt.io\\:operator:clusterrole'
      ],
      resource_deps=['multus']
 )
@@ -185,7 +186,9 @@ k8s_resource(
     workload='cert-manager',
     objects=[
         # Try to work arouund unmanaged role/clusterrole resources that cannot be included due to ':' in name
-        #'cert-manager:namespace',
+        'cert-manager:namespace',
+        'cert-manager\\:leaderelection:role',
+        'cert-manager\\:leaderelection:rolebinding',
         'certificaterequests.cert-manager.io:customresourcedefinition',
         'certificates.cert-manager.io:customresourcedefinition',
         'challenges.acme.cert-manager.io:customresourcedefinition',
@@ -215,7 +218,9 @@ k8s_resource(
     objects=[
         'cert-manager-webhook:mutatingwebhookconfiguration',
         'cert-manager-webhook:serviceaccount',
-        'cert-manager-webhook:validatingwebhookconfiguration'
+        'cert-manager-webhook:validatingwebhookconfiguration',
+        'cert-manager-webhook\\:dynamic-serving:role',
+        'cert-manager-webhook\\:dynamic-serving:rolebinding'
     ],
     resource_deps=['cert-manager-cainjector']
 )
@@ -224,7 +229,9 @@ k8s_resource(
     objects=[
         'cert-manager-cainjector:serviceaccount',
         'cert-manager-cainjector:clusterrolebinding:cert-manager',
-        'cert-manager-cainjector:clusterrole:cert-manager'
+        'cert-manager-cainjector:clusterrole:cert-manager',
+        'cert-manager-cainjector\\:leaderelection:role',
+        'cert-manager-cainjector\\:leaderelection:rolebinding'
     ],
     resource_deps=['cert-manager']
 )
@@ -423,6 +430,7 @@ k8s_resource(
 # deploy boots from locally checked out repo, falling back to static deployment
 load_from_repo_with_fallback(boots_repo_path, 'boots', 'deploy/kind/boots.yaml', ['tink-server'])
 
+# TODO: Better handling of OSIE pre-loading, potentially using the [file_sync_only](https://github.com/tilt-dev/tilt-extensions/tree/master/file_sync_only) Tilt extension
 # TODO: preload appropriate images into registry (depends on templates)
 # TODO: preload hardware data (depends on worker definitions)
 # TODO: preload templates and workflows
