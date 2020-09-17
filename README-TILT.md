@@ -4,10 +4,17 @@ Registry configuration roughly cribbed from https://www.civo.com/learn/set-up-a-
 
 ## Prerequisites
 
+### Standalone tools
+
 - [kind](https://kind.sigs.k8s.io/) (v0.8.0+, Tested with v0.8.1)
-- kubectl
+- [kubectl](https://kubernetes.io/docs/tasks/tools/install-kubectl/) (tested with v1.18.8)
 - [helm](https://helm.sh/docs/intro/quickstart/) (v3+, tested with v3.3.0)
-- [tilt](https://tilt.dev)
+- [krew](https://krew.sigs.k8s.io/) (tested with v0.4.0)
+- [tilt](https://tilt.dev) (v0.17.5+, tested with v0.17.5)
+
+### Kubectl plugins
+
+- [virt](https://kubevirt.io/user-guide/#/installation/virtctl?id=install-virtctl-with-krew) (tested with v0.32.0)
 
 ## Setup
 
@@ -101,8 +108,6 @@ kubectl create -f deploy/kind/worker.yaml
 ```
 
 ## Watching the worker console
-
-If you want to watch the worker console, you can do so by downloading the `virt` plugin for `kubectl`
 
 ```sh
 kubectl virt vnc worker
