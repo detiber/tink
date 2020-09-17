@@ -16,6 +16,16 @@ Registry configuration roughly cribbed from https://www.civo.com/learn/set-up-a-
 
 - [virt](https://kubevirt.io/user-guide/#/installation/virtctl?id=install-virtctl-with-krew) (tested with v0.32.0)
 
+### remote client for virt kubectl plugin
+
+On Mac:
+
+```sh
+brew cask install tigervnc-viewer
+```
+
+On Linux you will need remote-viewer
+
 ## Setup
 
 - Bring up a new kind cluster
