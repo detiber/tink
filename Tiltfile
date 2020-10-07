@@ -334,6 +334,18 @@ k8s_resource(
 )
 
 local_resource(
+    'tink-worker-build',
+    'CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o build/tink-worker ./cmd/tink-worker',
+    deps=[
+        'go.mod',
+        'go.sum',
+        'cmd/tink-worker',
+        'client',
+        'protos'
+    ]
+)
+
+local_resource(
     'tink-server-build',
     'CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o build/tink-server ./cmd/tink-server',
     deps=[
