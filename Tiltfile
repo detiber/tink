@@ -335,13 +335,42 @@ k8s_resource(
 
 local_resource(
     'tink-worker-build',
-    'CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o build/tink-worker ./cmd/tink-worker',
+    'CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o deploy/kind/docker/tink-worker ./cmd/tink-worker',
     deps=[
         'go.mod',
         'go.sum',
         'cmd/tink-worker',
         'client',
         'protos'
+    ]
+)
+
+local_resource(
+    'tink-worker-docker-build',
+    'docker build -t tink-worker:latest deploy/kind/docker/tink-worker/',
+    resource_deps=[
+        'tink-worker-build'
+    ],
+    deps=[
+        'deploy/kind/docker/tink-worker'
+    ],
+)
+
+local_resource(
+    'registry-port-forward',
+    '',
+    serve_cmd='kubectl port-forward service/docker-registry 5000:443',
+    resource_deps=[
+        'docker-registry'
+    ]
+)
+
+local_resource(
+    'tink-worker-docker-push',
+    'skopeo copy --dest-tls-verify=false --dest-creds=admin:'+registry_password+' docker-daemon:tink-worker:latest docker://localhost:5000/tink-worker:latest',
+    resource_deps=[
+        'tink-worker-docker-build',
+        'registry-port-forward'
     ]
 )
 
@@ -360,6 +389,7 @@ local_resource(
         'protos'
     ]
 )
+
 docker_build_with_restart(
     'quay.io/tinkerbell/tink',
     '.',
