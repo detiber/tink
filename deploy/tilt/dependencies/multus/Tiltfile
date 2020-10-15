@@ -1,0 +1,81 @@
+def deploy_multus(cidr):
+    k8s_yaml('deploy/tilt/dependencies/multus/multus.yaml')
+    cni_config = {
+        'cniVersion': '0.3.1',
+        'name': 'tink-dev',
+        'plugins': [
+            {
+                'type': 'bridge',
+                'capabilities': {
+                    'ips': True,
+                },
+                'bridge': 'tink-dev',
+                'ipam': {
+                    'type': 'static',
+                    'routes': [
+                        {
+                            'dst': cidr,
+                        }
+                    ]
+                }
+            },
+            {
+                'type': 'kind-no-snat-interface'
+            }
+        ]
+    }
+    multus_config = {
+        'apiVersion': 'k8s.cni.cncf.io/v1',
+        'kind': 'NetworkAttachmentDefinition',
+        'metadata': {
+            'name': 'tink-dev',
+        },
+        'spec': {
+            'config': encode_json(cni_config)
+        }
+    }  
+    k8s_yaml(encode_yaml(multus_config))
+    cni_config = {
+        'cniVersion': '0.3.1',
+        'name': 'tink-dev-no-ip',
+        'plugins': [
+            {
+                'type': 'bridge',
+                'bridge': 'tink-dev'
+            },
+            {
+                'type': 'route-override',
+                'addroutes': [
+                    {
+                        'dst': cidr
+                    }
+                ]
+            },
+            {
+                'type': 'kind-no-snat-interface'
+            }
+        ]
+    }
+    multus_config = {
+        'apiVersion': 'k8s.cni.cncf.io/v1',
+        'kind': 'NetworkAttachmentDefinition',
+        'metadata': {
+            'name': 'tink-dev-no-ip',
+        },
+        'spec': {
+            'config': encode_json(cni_config)
+        }
+    }  
+    k8s_yaml(encode_yaml(multus_config))
+    k8s_resource(
+        workload='kube-multus-ds',
+        new_name='multus',
+        objects=[
+            'multus:serviceaccount',
+            'network-attachment-definitions.k8s.cni.cncf.io:customresourcedefinition',
+            'multus:clusterrole',
+            'multus:clusterrolebinding',
+            'tink-dev:networkattachmentdefinition',
+            'tink-dev-no-ip:networkattachmentdefinition'
+        ],
+    )
