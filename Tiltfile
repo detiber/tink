@@ -78,7 +78,7 @@ deploy_registry(
     ip=registry_ip,
     cert_issuer='tink-ca',
     cert_name='registry-server-certificate',
-    pod_annotations='k8s\\.v1\\.cni\\.cncf\\.io/networks=[{"interface":"net1"\\,"mac":"'+registry_mac+'"\\,"ips":["'+registry_ip+'/'+registry_mask+'"]\\,"name":"'+registry_network_attachment+'"\\,"namespace":"default"}]',
+    pod_annotations='k8s\\.v1\\.cni\\.cncf\\.io/networks=[{"interface":"net1"\\,"mac":"'+registry_mac+'"\\,"ips":["'+registry_ip+registry_mask+'"]\\,"name":"'+registry_network_attachment+'"\\,"namespace":"default"}]',
     credentials_secret_name='tink-registry-credentials'
 )
 
