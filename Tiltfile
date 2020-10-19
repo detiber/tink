@@ -163,8 +163,8 @@ tink_ip = '172.30.0.4'
 
 create_secret_if_not_exists('tink-credentials', USERNAME='admin', PASSWORD=generate_password())
 
-tink_username = str(local("kubectl get secret tink-registry -o jsonpath='{.data.USERNAME}' | base64 -d", quiet=True))
-tink_password = str(local("kubectl get secret tink-registry -o jsonpath='{.data.PASSWORD}' | base64 -d", quiet=True))
+tink_username = str(local("kubectl get secret tink-credentials -o jsonpath='{.data.USERNAME}' | base64 -d", quiet=True))
+tink_password = str(local("kubectl get secret tink-credentials -o jsonpath='{.data.PASSWORD}' | base64 -d", quiet=True))
 
 generate_certificate(
     issuer='tink-ca',

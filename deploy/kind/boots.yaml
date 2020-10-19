@@ -32,7 +32,7 @@ spec:
         envFrom:
         - prefix: REGISTRY_
           secretRef:
-            name: tink-registry
+            name: tink-registry-credentials
         env:
         - name: PUBLIC_IP
           value: 172.30.0.1
