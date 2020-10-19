@@ -6,11 +6,11 @@ Registry configuration roughly cribbed from https://www.civo.com/learn/set-up-a-
 
 ### Standalone tools
 
-- [kind](https://kind.sigs.k8s.io/) (v0.8.0+, Tested with v0.8.1)
+- [kind](https://kind.sigs.k8s.io/) (v0.8.0+, Tested with v0.9.0)
 - [kubectl](https://kubernetes.io/docs/tasks/tools/install-kubectl/) (tested with v1.18.8)
 - [helm](https://helm.sh/docs/intro/quickstart/) (v3+, tested with v3.3.0)
 - [krew](https://krew.sigs.k8s.io/) (tested with v0.4.0)
-- [tilt](https://tilt.dev) (v0.17.5+, tested with v0.17.5)
+- [tilt](https://tilt.dev) (v0.17.5+, tested with v0.17.9)
 
 ### Kubectl plugins
 
@@ -105,10 +105,9 @@ tink workflow create -t <template id> -r '{"device_1":"08:00:27:00:00:01"}'
 ## Load the hello-world image into the registry
 
 ```sh
-kubectl run -it --command --rm --attach --image quay.io/containers/skopeo:v1.1.1 --overrides='{ "apiVersion": "v1", "metadata": {"annotations": { "k8s.v1.cni.cncf.io/networks":"[{\"interface\":\"net1\",\"mac\":\"08:00:31:00:00:00\",\"ips\":[\"172.30.0.100/16\"],\"name\":\"tink-dev\",\"namespace\":\"default\"}]" } }, "spec": { "containers": [ { "name": "skopeo", "image": "quay.io/containers/skopeo:v1.1.1", "command": [ "sh" ], "tty": true, "stdin": true, "volumeMounts": [ { "name": "registry-creds", "mountPath": "/creds" } ] } ], "volumes": [ { "name": "registry-creds", "secret": { "secretName": "tink-registry" } } ] } }' skopeo -- sh
+kubectl run -it --command --rm --attach --image quay.io/containers/skopeo:v1.1.1 --overrides='{ "apiVersion": "v1", "metadata": {"annotations": { "k8s.v1.cni.cncf.io/networks":"[{\"interface\":\"net1\",\"mac\":\"08:00:31:00:00:00\",\"ips\":[\"172.30.0.100/16\"],\"name\":\"tink-dev\",\"namespace\":\"default\"}]" } }, "spec": { "containers": [ { "name": "skopeo", "image": "quay.io/containers/skopeo:v1.1.1", "command": [ "sh" ], "tty": true, "stdin": true, "volumeMounts": [ { "name": "registry-creds", "mountPath": "/creds" } ] } ], "volumes": [ { "name": "registry-creds", "secret": { "secretName": "tink-registry-credentials" } } ] } }' skopeo -- sh
 
 skopeo copy --dest-tls-verify=false --dest-creds=admin:$(cat /creds/PASSWORD) docker://hello-world docker://$(cat /creds/URL)/hello-world
-skopeo copy --dest-tls-verify=false --dest-creds=admin:$(cat /creds/PASSWORD) docker://quay.io/tinkerbell/tink-worker:latest docker://$(cat /creds/URL)/tink-worker:latest
 ```
 
 ## Bring up the worker VM
