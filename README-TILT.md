@@ -10,7 +10,7 @@ Registry configuration roughly cribbed from https://www.civo.com/learn/set-up-a-
 - [kubectl](https://kubernetes.io/docs/tasks/tools/install-kubectl/) (tested with v1.18.8)
 - [helm](https://helm.sh/docs/intro/quickstart/) (v3+, tested with v3.3.0)
 - [krew](https://krew.sigs.k8s.io/) (tested with v0.4.0)
-- [tilt](https://tilt.dev) (v0.17.5+, tested with v0.17.9)
+- [tilt](https://tilt.dev) (v0.17.8+, tested with v0.17.9)
 
 ### Kubectl plugins
 
