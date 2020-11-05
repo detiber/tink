@@ -1,4 +1,4 @@
-def issuer(self_signed_issuer=True, self_signed_ca_issuer=True, self_signed_ca_issuer_name='ca'):
+def issuer(self_signed_issuer=True, self_signed_ca_issuer=True, self_signed_ca_issuer_name='ca', resource_deps=[]):
     if self_signed_issuer:
             ss_issuer = {
                 'apiVersion': 'cert-manager.io/v1',
@@ -14,7 +14,7 @@ def issuer(self_signed_issuer=True, self_signed_ca_issuer=True, self_signed_ca_i
             k8s_resource(
                 new_name='selfsigned-issuer',
                 objects=['selfsigned:issuer'],
-                resource_deps=[]
+                resource_deps=resource_deps
             )
 
     if self_signed_ca_issuer:
