@@ -50,11 +50,9 @@ deploy_multus('172.30.0.0/16')
 # cert-manager
 # Load the cert manager helpers
 load('deploy/tilt/dependencies/cert-manager/TiltfileCertManager', 'cert_manager')
-load('deploy/tilt/dependencies/cert-manager/TiltfileCertManagerResources', 'cert_manager_resources')
 load('deploy/tilt/dependencies/cert-manager/TiltfileCertManagerIssuer', 'issuer', 'generate_certificate')
 cert_manager(resource_deps=['multus'])
-cert_manager_resources()
-issuer(self_signed_ca_issuer_name='tink-ca')
+issuer(self_signed_ca_issuer_name='tink-ca',resource_deps=['wait-for-cert-manager-webhook'])
 
 # Load the kubevirt helpers
 load('deploy/tilt/dependencies/kubevirt/Tiltfile', 'deploy_kubevirt')
@@ -129,7 +127,8 @@ local_resource(
         'metrics',
         'pkg',
         'protos'
-    ]
+    ],
+    resource_deps=['wait-for-cert-manager']
 )
 
 docker_build_with_restart(

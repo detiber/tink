@@ -41,8 +41,51 @@ def cert_manager(resource_deps=[]):
             resource_deps=resource_deps
     )
     local_resource("wait-for-cert-manager", 
-            cmd="kubectl wait --for=condition=Available --timeout=300s deployments cert-manager -n cert-manager", 
-            resource_deps=["cert-manager"] 
+        cmd="kubectl wait --for=condition=progressing --timeout=100s deployments cert-manager -n cert-manager", 
+        resource_deps=["cert-manager"] 
     )
+    local_resource("wait-for-cert-manager-api-service",
+        cmd="kubectl wait --for=condition=available --timeout=100s apiservice v1.acme.cert-manager.io  v1.cert-manager.io",
+        resource_deps=["wait-for-cert-manager"]
+    )
+    local_resource("sleep-until-cert-manager-acquires-kube-system-lease",
+        cmd="sleep 50",
+        resource_deps=["wait-for-cert-manager-api-service"]
+    )
+    k8s_resource(
+        workload='cert-manager-cainjector',
+        objects=[
+            'cert-manager-cainjector:serviceaccount',
+            'cert-manager-cainjector:clusterrolebinding:cert-manager',
+            'cert-manager-cainjector:clusterrole:cert-manager',
+            'cert-manager-cainjector\\:leaderelection:role',
+            'cert-manager-cainjector\\:leaderelection:rolebinding'
+        ],
+        resource_deps=['wait-for-cert-manager']
+    )
+    k8s_resource(
+        workload='cert-manager-webhook',
+        objects=[
+            'cert-manager-webhook:mutatingwebhookconfiguration',
+            'cert-manager-webhook:serviceaccount',
+            'cert-manager-webhook:validatingwebhookconfiguration',
+            'cert-manager-webhook\\:dynamic-serving:role',
+            'cert-manager-webhook\\:dynamic-serving:rolebinding'
+        ],
+        resource_deps=['cert-manager-cainjector']
+    )
+    local_resource("wait-for-cert-manager-cainjector",
+        cmd="kubectl wait --for=condition=progressing --timeout=50s deployments cert-manager-cainjector -n cert-manager",
+        resource_deps=["cert-manager-cainjector"]
+    )
+    local_resource("wait-for-cert-manager-webhook",
+        cmd="kubectl wait --for=condition=progressing --timeout=50s deployments cert-manager-webhook -n cert-manager",
+        resource_deps=["cert-manager-webhook"]
+    )
+    local_resource("sleep-until-cert-manager-configures",
+        cmd="sleep 90",
+        resource_deps=["wait-for-cert-manager-webhook"]
+    )
+
 
 
