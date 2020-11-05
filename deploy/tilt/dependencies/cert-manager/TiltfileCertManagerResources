@@ -1,0 +1,34 @@
+# Load the extension for helm_remote
+load('ext://helm_remote', 'helm_remote')
+
+def cert_manager_resources():
+    k8s_resource(
+        workload='cert-manager-cainjector',
+        objects=[
+            'cert-manager-cainjector:serviceaccount',
+            'cert-manager-cainjector:clusterrolebinding:cert-manager',
+            'cert-manager-cainjector:clusterrole:cert-manager',
+            'cert-manager-cainjector\\:leaderelection:role',
+            'cert-manager-cainjector\\:leaderelection:rolebinding'
+        ],
+        resource_deps=['cert-manager']
+    )
+    k8s_resource(
+        workload='cert-manager-webhook',
+        objects=[
+            'cert-manager-webhook:mutatingwebhookconfiguration',
+            'cert-manager-webhook:serviceaccount',
+            'cert-manager-webhook:validatingwebhookconfiguration',
+            'cert-manager-webhook\\:dynamic-serving:role',
+            'cert-manager-webhook\\:dynamic-serving:rolebinding'
+        ],
+        resource_deps=['cert-manager-cainjector']
+    )
+    local_resource("wait-for-cert-manager-cainjector", 
+        cmd="kubectl wait --for=condition=Available --timeout=300s deployments cert-manager-cainjector",
+        resource_deps=["cert-manager"]
+    )
+    local_resource("wait-for-cert-manager-webhook", 
+        cmd="kubectl wait --for=condition=Available --timeout=300s deployments cert-manager-webhook",
+        resource_deps=["cert-manager-cainjector"]
+    )

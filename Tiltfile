@@ -12,14 +12,8 @@ load('ext://restart_process', 'docker_build_with_restart')
 # Load the extension for helm_remote
 load('ext://helm_remote', 'helm_remote')
 
-# Load the cert manager helpers
-load('deploy/tilt/dependencies/cert-manager/Tiltfile', 'cert_manager', 'generate_certificate')
-
 # Load the multus helpers
 load('deploy/tilt/dependencies/multus/Tiltfile', 'deploy_multus')
-
-# Load the kubevirt helpers
-load('deploy/tilt/dependencies/kubevirt/Tiltfile', 'deploy_kubevirt')
 
 # Load the database helpers
 load('deploy/tilt/dependencies/database/Tiltfile', 'deploy_database')
@@ -54,9 +48,16 @@ def load_from_repo_with_fallback(path, workload_name, fallback_yaml, fallback_de
 deploy_multus('172.30.0.0/16')
 
 # cert-manager
-cert_manager(self_signed_ca_issuer_name='tink-ca', resource_deps=['multus'])
+# Load the cert manager helpers
+load('deploy/tilt/dependencies/cert-manager/TiltfileCertManager', 'cert_manager')
+load('deploy/tilt/dependencies/cert-manager/TiltfileCertManagerResources', 'cert_manager_resources')
+load('deploy/tilt/dependencies/cert-manager/TiltfileCertManagerIssuer', 'issuer', 'generate_certificate')
+cert_manager(resource_deps=['multus'])
+cert_manager_resources()
+issuer(self_signed_ca_issuer_name='tink-ca')
 
-# KubeVirt
+# Load the kubevirt helpers
+load('deploy/tilt/dependencies/kubevirt/Tiltfile', 'deploy_kubevirt')
 deploy_kubevirt()
 
 # PostgreSQL
@@ -218,3 +219,4 @@ load_from_repo_with_fallback(boots_repo_path, 'boots', 'deploy/kind/boots.yaml',
 # TODO: factor out some of the dependencies into library files
 # TODO: improve cleanup of resources, some things are being left behind making tilt up/tilt down/tilt up not work correctly
 # TODO: see if calico/cilium as a cni would avoid having to use a custom cni plugin
+
