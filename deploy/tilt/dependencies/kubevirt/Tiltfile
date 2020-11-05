@@ -14,7 +14,7 @@ def deploy_kubevirt():
             'kubevirt-cluster-critical:priorityclass',
             'kubevirt.io\\:operator:clusterrole'
         ],
-        resource_deps=['multus', 'cert-manager-webhook']
+        resource_deps=['multus', 'sleep-until-cert-manager-configures']
     )
 
     # TODO: try to detect if kvm/virtio are supported and skip this step if they are

@@ -45,7 +45,7 @@ def deploy_registry(name='docker-registry', user='user', password="", url="", ip
     helm_remote(
         'docker-registry',
         release_name=name,
-        repo_url='https://kubernetes-charts.storage.googleapis.com/',
+        repo_url='https://charts.helm.sh/stable', 
         repo_name='docker-registry',
         set=set_values,
     )
