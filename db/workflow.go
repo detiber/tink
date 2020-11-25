@@ -77,10 +77,11 @@ func insertIntoWfWorkerTable(ctx context.Context, db *sql.DB, wfID uuid.UUID, wo
 	INSERT INTO
 		workflow_worker_map (workflow_id, worker_id)
 	VALUES
-	        ($1, $2)
-	ON CONFLICT (workflow_id, worker_id)
-	DO NOTHING;
-	`, wfID, workerID)
+	        ($1, $2);
+	`, wfID, workerID) 
+	//ON CONFLICT (workflow_id, worker_id)
+	//DO NOTHING;
+	// `, wfID, workerID)
 	if err != nil {
 		return errors.Wrap(err, "INSERT in to workflow_worker_map")
 	}
