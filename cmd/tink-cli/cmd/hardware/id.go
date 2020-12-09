@@ -8,10 +8,9 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/tinkerbell/tink/util"
-
 	"github.com/spf13/cobra"
 	"github.com/tinkerbell/tink/client"
+	"github.com/tinkerbell/tink/pkg"
 	"github.com/tinkerbell/tink/protos/hardware"
 )
 
@@ -29,7 +28,7 @@ var idCmd = &cobra.Command{
 			if err != nil {
 				log.Fatal(err)
 			}
-			b, err := json.Marshal(util.HardwareWrapper{Hardware: hw})
+			b, err := json.Marshal(pkg.HardwareWrapper{Hardware: hw})
 			if err != nil {
 				log.Fatal(err)
 			}

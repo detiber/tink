@@ -1,61 +1,35 @@
 package main
 
 import (
-	"context"
 	"os"
-	"os/signal"
-	"syscall"
 
 	"github.com/packethost/pkg/log"
-	rpcServer "github.com/tinkerbell/tink/grpc-server"
-	httpServer "github.com/tinkerbell/tink/http-server"
+	"github.com/tinkerbell/tink/cmd/tink-server/cmd"
 )
 
-var (
-	// version is set at build time
-	version = "devel"
-
-	logger log.Logger
+const (
+	serviceKey = "github.com/tinkerbell/tink"
 )
+
+// version is set at build time.
+var version = "devel"
 
 func main() {
-	log, cleanup, err := log.Init("github.com/tinkerbell/tink")
+	retCode := 0
 
+	defer func() { os.Exit(retCode) }()
+
+	logger, err := log.Init(serviceKey)
 	if err != nil {
 		panic(err)
 	}
-	logger = log
-	defer cleanup()
 
-	log.Info("starting version " + version)
+	defer logger.Close()
 
-	ctx, closer := context.WithCancel(context.Background())
-	errCh := make(chan error, 2)
-	facility := os.Getenv("FACILITY")
+	rootCmd := cmd.NewRootCommand(version, logger)
+	if err := rootCmd.Execute(); err != nil {
+		retCode = 1
 
-	cert, modT := rpcServer.SetupGRPC(ctx, logger, facility, errCh)
-	httpServer.SetupHTTP(ctx, logger, cert, modT, errCh)
-
-	sigs := make(chan os.Signal, 1)
-	signal.Notify(sigs, syscall.SIGINT, syscall.SIGQUIT, syscall.SIGTERM)
-	select {
-	case err = <-errCh:
-		logger.Error(err)
-		panic(err)
-	case sig := <-sigs:
-		logger.With("signal", sig.String()).Info("signal received, stopping servers")
-	}
-	closer()
-
-	// wait for grpc server to shutdown
-	err = <-errCh
-	if err != nil {
-		logger.Error(err)
-		panic(err)
-	}
-	err = <-errCh
-	if err != nil {
-		logger.Error(err)
-		panic(err)
+		return
 	}
 }

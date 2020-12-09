@@ -4,23 +4,19 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-
-	grpcRuntime "github.com/grpc-ecosystem/grpc-gateway/runtime"
-	"github.com/packethost/pkg/log"
-
 	"io/ioutil"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"strings"
-
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/test/bufconn"
-
 	"testing"
 
+	grpcRuntime "github.com/grpc-ecosystem/grpc-gateway/runtime"
+	"github.com/packethost/pkg/log"
 	"github.com/tinkerbell/tink/protos/hardware"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/test/bufconn"
 )
 
 const bufSize = 1024 * 1024
@@ -53,12 +49,7 @@ func (s *server) Push(ctx context.Context, in *hardware.PushRequest) (*hardware.
 }
 
 func TestMain(m *testing.M) {
-	os.Setenv("PACKET_ENV", "test")
-	os.Setenv("PACKET_VERSION", "ignored")
-	os.Setenv("ROLLBAR_TOKEN", "ignored")
-
-	logger, _, _ = log.Init("github.com/tinkerbell/tink")
-
+	logger, _ = log.Init("github.com/tinkerbell/tink")
 	lis = bufconn.Listen(bufSize)
 	s := grpc.NewServer()
 	hardware.RegisterHardwareServiceServer(s, &server{})
@@ -67,7 +58,6 @@ func TestMain(m *testing.M) {
 			logger.Info("Server exited with error: %v", err)
 		}
 	}()
-
 	os.Exit(m.Run())
 }
 

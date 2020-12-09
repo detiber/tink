@@ -8,21 +8,20 @@ import (
 	"net/http"
 	tt "text/template"
 
-	// nolint:staticcheck SA1019 We will do it later
-	"github.com/golang/protobuf/jsonpb"
-
-	"github.com/tinkerbell/tink/protos/template"
-	"github.com/tinkerbell/tink/protos/workflow"
-
+	"github.com/golang/protobuf/jsonpb" // nolint:staticcheck
 	"github.com/grpc-ecosystem/grpc-gateway/runtime"
 	"github.com/grpc-ecosystem/grpc-gateway/utilities"
+	"github.com/tinkerbell/tink/pkg"
 	"github.com/tinkerbell/tink/protos/hardware"
-	"github.com/tinkerbell/tink/util"
+	"github.com/tinkerbell/tink/protos/template"
+	"github.com/tinkerbell/tink/protos/workflow"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
 
+// RegisterHardwareServiceHandlerFromEndpoint serves Hardware requests at the
+// given endpoint over GRPC
 func RegisterHardwareServiceHandlerFromEndpoint(ctx context.Context, mux *runtime.ServeMux, endpoint string, opts []grpc.DialOption) error {
 	conn, err := grpc.Dial(endpoint, opts...)
 	if err != nil {
@@ -47,7 +46,7 @@ func RegisterHardwareServiceHandlerFromEndpoint(ctx context.Context, mux *runtim
 	// hardware push handler | POST /v1/hardware
 	hardwarePushPattern := runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1}, []string{"v1", "hardware"}, "", runtime.AssumeColonVerbOpt(true)))
 	mux.Handle("POST", hardwarePushPattern, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
-		var hw util.HardwareWrapper
+		var hw pkg.HardwareWrapper
 		newReader, berr := utilities.IOReaderFactory(req.Body)
 		if berr != nil {
 			writeResponse(w, http.StatusBadRequest, status.Errorf(codes.InvalidArgument, "%v", berr).Error())
@@ -93,7 +92,7 @@ func RegisterHardwareServiceHandlerFromEndpoint(ctx context.Context, mux *runtim
 			writeResponse(w, http.StatusInternalServerError, err.Error())
 			return
 		}
-		b, err := json.Marshal(util.HardwareWrapper{Hardware: hw})
+		b, err := json.Marshal(pkg.HardwareWrapper{Hardware: hw})
 		if err != nil {
 			writeResponse(w, http.StatusInternalServerError, err.Error())
 		}
@@ -121,7 +120,7 @@ func RegisterHardwareServiceHandlerFromEndpoint(ctx context.Context, mux *runtim
 			writeResponse(w, http.StatusInternalServerError, err.Error())
 			return
 		}
-		b, err := json.Marshal(util.HardwareWrapper{Hardware: hw})
+		b, err := json.Marshal(pkg.HardwareWrapper{Hardware: hw})
 		if err != nil {
 			writeResponse(w, http.StatusInternalServerError, err.Error())
 			return
@@ -152,7 +151,7 @@ func RegisterHardwareServiceHandlerFromEndpoint(ctx context.Context, mux *runtim
 			writeResponse(w, http.StatusInternalServerError, err.Error())
 			return
 		}
-		b, err := json.Marshal(util.HardwareWrapper{Hardware: hw})
+		b, err := json.Marshal(pkg.HardwareWrapper{Hardware: hw})
 		if err != nil {
 			writeResponse(w, http.StatusInternalServerError, err.Error())
 			return
@@ -173,7 +172,7 @@ func RegisterHardwareServiceHandlerFromEndpoint(ctx context.Context, mux *runtim
 		var hw *hardware.Hardware
 		err = nil
 		for hw, err = alls.Recv(); err == nil && hw != nil; hw, err = alls.Recv() {
-			b, err := json.Marshal(util.HardwareWrapper{Hardware: hw})
+			b, err := json.Marshal(pkg.HardwareWrapper{Hardware: hw})
 			if err != nil {
 				writeResponse(w, http.StatusInternalServerError, err.Error())
 				return
@@ -214,6 +213,8 @@ func RegisterHardwareServiceHandlerFromEndpoint(ctx context.Context, mux *runtim
 	return nil
 }
 
+// RegisterTemplateHandlerFromEndpoint serves Template requests at the given
+// endpoint over GRPC
 func RegisterTemplateHandlerFromEndpoint(ctx context.Context, mux *runtime.ServeMux, endpoint string, opts []grpc.DialOption) error {
 	conn, err := grpc.Dial(endpoint, opts...)
 	if err != nil {
@@ -233,7 +234,7 @@ func RegisterTemplateHandlerFromEndpoint(ctx context.Context, mux *runtime.Serve
 			}
 		}()
 	}()
-	client := template.NewTemplateClient(conn)
+	client := template.NewTemplateServiceClient(conn)
 
 	// template create handler | POST /v1/templates
 	templateCreatePattern := runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1}, []string{"v1", "templates"}, "", runtime.AssumeColonVerbOpt(true)))
@@ -266,9 +267,9 @@ func RegisterTemplateHandlerFromEndpoint(ctx context.Context, mux *runtime.Serve
 		}
 	})
 
-	// template get handler | GET /v1/templates/{id}
-	templateGetPattern := runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 1, 0, 4, 1, 5, 2}, []string{"v1", "templates", "id"}, "", runtime.AssumeColonVerbOpt(true)))
-	mux.Handle("GET", templateGetPattern, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+	// template get by id handler | GET /v1/templates/{id}
+	templateGetByIDPattern := runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 1, 0, 4, 1, 5, 2}, []string{"v1", "templates", "id"}, "", runtime.AssumeColonVerbOpt(true)))
+	mux.Handle("GET", templateGetByIDPattern, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
 		var gr template.GetRequest
 		val, ok := pathParams["id"]
 		if !ok {
@@ -276,12 +277,38 @@ func RegisterTemplateHandlerFromEndpoint(ctx context.Context, mux *runtime.Serve
 			return
 		}
 
-		gr.Id, err = runtime.String(val)
-
+		id, err := runtime.String(val)
 		if err != nil {
 			writeResponse(w, http.StatusBadRequest, status.Errorf(codes.InvalidArgument, "type mismatch, parameter: %s, error: %v", "id", err).Error())
 			return
 		}
+		gr.GetBy = &template.GetRequest_Id{Id: id}
+
+		t, err := client.GetTemplate(context.Background(), &gr)
+		if err != nil {
+			logger.Error(err)
+			writeResponse(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writeResponse(w, http.StatusOK, t.Data)
+	})
+
+	// template get by name handler | GET /v1/templates/name/{name}
+	templateGetByNamePattern := runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 1, 0, 4, 1, 5, 2}, []string{"v1", "templates", "name"}, "", runtime.AssumeColonVerbOpt(true)))
+	mux.Handle("GET", templateGetByNamePattern, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+		var gr template.GetRequest
+		val, ok := pathParams["name"]
+		if !ok {
+			writeResponse(w, http.StatusBadRequest, status.Errorf(codes.InvalidArgument, "missing parameter %s", "name").Error())
+			return
+		}
+
+		name, err := runtime.String(val)
+		if err != nil {
+			writeResponse(w, http.StatusBadRequest, status.Errorf(codes.InvalidArgument, "type mismatch, parameter: %s, error: %v", "name", err).Error())
+			return
+		}
+		gr.GetBy = &template.GetRequest_Name{Name: name}
 
 		t, err := client.GetTemplate(context.Background(), &gr)
 		if err != nil {
@@ -302,25 +329,34 @@ func RegisterTemplateHandlerFromEndpoint(ctx context.Context, mux *runtime.Serve
 			return
 		}
 
-		gr.Id, err = runtime.String(val)
-
+		id, err := runtime.String(val)
 		if err != nil {
 			writeResponse(w, http.StatusBadRequest, status.Errorf(codes.InvalidArgument, "type mismatch, parameter: %s, error: %v", "id", err).Error())
 			return
 		}
+		gr.GetBy = &template.GetRequest_Id{Id: id}
 
 		if _, err := client.DeleteTemplate(context.Background(), &gr); err != nil {
 			logger.Error(err)
 			writeResponse(w, http.StatusInternalServerError, err.Error())
 			return
 		}
-		writeResponse(w, http.StatusOK, fmt.Sprintf(`{"status": "ok", "msg": "template deleted successfully", "id": "%v"}`, gr.Id))
+		writeResponse(w, http.StatusOK, fmt.Sprintf(`{"status": "ok", "msg": "template deleted successfully", "id": "%v"}`, gr.GetId()))
 	})
 
-	// template list handler | GET /v1/templates
+	// template list handler | GET /v1/templates?name=
 	templateListPattern := runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1}, []string{"v1", "templates"}, "", runtime.AssumeColonVerbOpt(true)))
 	mux.Handle("GET", templateListPattern, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
-		list, err := client.ListTemplates(context.Background(), &template.Empty{})
+		nameFilter := "*" // default filter will match everything
+		if query := req.URL.Query()["name"]; len(query) > 0 {
+			nameFilter = query[0]
+		}
+
+		list, err := client.ListTemplates(context.Background(), &template.ListRequest{
+			FilterBy: &template.ListRequest_Name{
+				Name: nameFilter,
+			},
+		})
 		if err != nil {
 			logger.Error(err)
 			writeResponse(w, http.StatusInternalServerError, err.Error())
@@ -347,6 +383,8 @@ func RegisterTemplateHandlerFromEndpoint(ctx context.Context, mux *runtime.Serve
 	return nil
 }
 
+// RegisterWorkflowSvcHandlerFromEndpoint serves Workflow requests at the given
+// endpoint over GRPC
 func RegisterWorkflowSvcHandlerFromEndpoint(ctx context.Context, mux *runtime.ServeMux, endpoint string, opts []grpc.DialOption) error {
 	conn, err := grpc.Dial(endpoint, opts...)
 	if err != nil {
@@ -366,7 +404,7 @@ func RegisterWorkflowSvcHandlerFromEndpoint(ctx context.Context, mux *runtime.Se
 			}
 		}()
 	}()
-	client := workflow.NewWorkflowSvcClient(conn)
+	client := workflow.NewWorkflowServiceClient(conn)
 
 	// workflow create handler | POST /v1/workflows
 	workflowCreatePattern := runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1}, []string{"v1", "workflows"}, "", runtime.AssumeColonVerbOpt(true)))

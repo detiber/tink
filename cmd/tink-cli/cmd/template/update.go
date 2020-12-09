@@ -7,7 +7,7 @@ import (
 	"log"
 	"os"
 
-	uuid "github.com/satori/go.uuid"
+	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 	"github.com/tinkerbell/tink/client"
 	"github.com/tinkerbell/tink/protos/template"
@@ -31,7 +31,7 @@ var updateCmd = &cobra.Command{
 			return fmt.Errorf("%v requires argument", c.UseLine())
 		}
 		for _, arg := range args {
-			if _, err := uuid.FromString(arg); err != nil {
+			if _, err := uuid.Parse(arg); err != nil {
 				return fmt.Errorf("invalid uuid: %s", arg)
 			}
 		}
@@ -52,8 +52,7 @@ func updateTemplate(id string) {
 		data := readTemplateData()
 		if data != "" {
 			if err := tryParseTemplate(data); err != nil {
-				log.Println(err)
-				return
+				log.Fatal(err)
 			}
 			req.Data = data
 		}
@@ -72,13 +71,13 @@ func updateTemplate(id string) {
 func readTemplateData() string {
 	f, err := os.Open(filePath)
 	if err != nil {
-		log.Println(err)
+		log.Fatal(err)
 	}
 	defer f.Close()
 
 	data, err := ioutil.ReadAll(f)
 	if err != nil {
-		log.Println(err)
+		log.Fatal(err)
 	}
 	return string(data)
 }

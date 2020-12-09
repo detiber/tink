@@ -10,9 +10,9 @@ import (
 	"github.com/packethost/pkg/log"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
-
 	"github.com/tinkerbell/tink/db"
 	"github.com/tinkerbell/tink/db/mock"
+	"github.com/tinkerbell/tink/metrics"
 	pb "github.com/tinkerbell/tink/protos/workflow"
 )
 
@@ -22,6 +22,8 @@ const (
 	invalidID  = "d699-4e9f-a29c-a5890ccbd"
 	actionName = "install-rootfs"
 	taskName   = "ubuntu-provisioning"
+
+	defaultTestTimeout = time.Millisecond * 10
 )
 
 var wfData = []byte("{'os': 'ubuntu', 'base_url': 'http://192.168.1.1/'}")
@@ -33,13 +35,10 @@ func testServer(db db.Database) *server {
 }
 
 func TestMain(m *testing.M) {
-	os.Setenv("PACKET_ENV", "test")
-	os.Setenv("PACKET_VERSION", "ignored")
-	os.Setenv("ROLLBAR_TOKEN", "ignored")
 
-	l, _, _ := log.Init("github.com/tinkerbell/tink")
+	l, _ := log.Init("github.com/tinkerbell/tink")
 	logger = l.Package("grpcserver")
-
+	metrics.SetupMetrics("onprem", logger)
 	os.Exit(m.Run())
 }
 
@@ -107,7 +106,7 @@ func TestGetWorkflowContextList(t *testing.T) {
 						return &pb.WorkflowContext{
 							WorkflowId:           workflowID,
 							TotalNumberOfActions: 1,
-							CurrentActionState:   pb.ActionState_ACTION_PENDING,
+							CurrentActionState:   pb.State_STATE_PENDING,
 						}, nil
 					},
 				},
@@ -118,12 +117,13 @@ func TestGetWorkflowContextList(t *testing.T) {
 			},
 		},
 	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), defaultTestTimeout)
+	defer cancel()
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
 			s := testServer(tc.args.db)
-			res, err := s.GetWorkflowContextList(
-				context.TODO(), &pb.WorkflowContextRequest{WorkerId: tc.args.workerID},
-			)
+			res, err := s.GetWorkflowContextList(ctx, &pb.WorkflowContextRequest{WorkerId: tc.args.workerID})
 			if err != nil {
 				assert.Error(t, err)
 				assert.Nil(t, res)
@@ -200,12 +200,13 @@ func TestGetWorkflowActions(t *testing.T) {
 			},
 		},
 	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), defaultTestTimeout)
+	defer cancel()
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
 			s := testServer(tc.args.db)
-			res, err := s.GetWorkflowActions(
-				context.TODO(), &pb.WorkflowActionsRequest{WorkflowId: tc.args.workflowID},
-			)
+			res, err := s.GetWorkflowActions(ctx, &pb.WorkflowActionsRequest{WorkflowId: tc.args.workflowID})
 			if err != nil {
 				assert.True(t, tc.want.expectedError)
 				assert.Error(t, err)
@@ -224,7 +225,7 @@ func TestReportActionStatus(t *testing.T) {
 		args struct {
 			db                                         mock.DB
 			workflowID, taskName, actionName, workerID string
-			actionState                                pb.ActionState
+			actionState                                pb.State
 		}
 		want struct {
 			expectedError bool
@@ -275,7 +276,7 @@ func TestReportActionStatus(t *testing.T) {
 				workerID:    workerID,
 				taskName:    taskName,
 				actionName:  actionName,
-				actionState: pb.ActionState_ACTION_PENDING,
+				actionState: pb.State_STATE_PENDING,
 			},
 			want: want{
 				expectedError: true,
@@ -288,7 +289,7 @@ func TestReportActionStatus(t *testing.T) {
 						return &pb.WorkflowContext{
 							WorkflowId:           workflowID,
 							TotalNumberOfActions: 1,
-							CurrentActionState:   pb.ActionState_ACTION_PENDING,
+							CurrentActionState:   pb.State_STATE_PENDING,
 						}, nil
 					},
 					GetWorkflowActionsFunc: func(ctx context.Context, wfID string) (*pb.WorkflowActionList, error) {
@@ -299,7 +300,7 @@ func TestReportActionStatus(t *testing.T) {
 				workerID:    workerID,
 				taskName:    taskName,
 				actionName:  actionName,
-				actionState: pb.ActionState_ACTION_IN_PROGRESS,
+				actionState: pb.State_STATE_RUNNING,
 			},
 			want: want{
 				expectedError: true,
@@ -312,7 +313,7 @@ func TestReportActionStatus(t *testing.T) {
 						return &pb.WorkflowContext{
 							WorkflowId:           workflowID,
 							TotalNumberOfActions: 1,
-							CurrentActionState:   pb.ActionState_ACTION_PENDING,
+							CurrentActionState:   pb.State_STATE_PENDING,
 						}, nil
 					},
 					GetWorkflowActionsFunc: func(ctx context.Context, wfID string) (*pb.WorkflowActionList, error) {
@@ -339,7 +340,7 @@ func TestReportActionStatus(t *testing.T) {
 				workerID:    workerID,
 				taskName:    taskName,
 				actionName:  actionName,
-				actionState: pb.ActionState_ACTION_IN_PROGRESS,
+				actionState: pb.State_STATE_RUNNING,
 			},
 			want: want{
 				expectedError: false,
@@ -354,7 +355,7 @@ func TestReportActionStatus(t *testing.T) {
 							TotalNumberOfActions: 1,
 							CurrentActionIndex:   0,
 							CurrentAction:        "disk-wipe",
-							CurrentActionState:   pb.ActionState_ACTION_PENDING,
+							CurrentActionState:   pb.State_STATE_PENDING,
 						}, nil
 					},
 					GetWorkflowActionsFunc: func(ctx context.Context, wfID string) (*pb.WorkflowActionList, error) {
@@ -388,7 +389,7 @@ func TestReportActionStatus(t *testing.T) {
 				workerID:    workerID,
 				taskName:    taskName,
 				actionName:  actionName,
-				actionState: pb.ActionState_ACTION_IN_PROGRESS,
+				actionState: pb.State_STATE_RUNNING,
 			},
 			want: want{
 				expectedError: false,
@@ -401,7 +402,7 @@ func TestReportActionStatus(t *testing.T) {
 						return &pb.WorkflowContext{
 							WorkflowId:           workflowID,
 							TotalNumberOfActions: 1,
-							CurrentActionState:   pb.ActionState_ACTION_PENDING,
+							CurrentActionState:   pb.State_STATE_PENDING,
 						}, nil
 					},
 					GetWorkflowActionsFunc: func(ctx context.Context, wfID string) (*pb.WorkflowActionList, error) {
@@ -422,7 +423,7 @@ func TestReportActionStatus(t *testing.T) {
 				workerID:    workerID,
 				taskName:    taskName,
 				actionName:  "different-action-name",
-				actionState: pb.ActionState_ACTION_IN_PROGRESS,
+				actionState: pb.State_STATE_RUNNING,
 			},
 			want: want{
 				expectedError: true,
@@ -435,7 +436,7 @@ func TestReportActionStatus(t *testing.T) {
 						return &pb.WorkflowContext{
 							WorkflowId:           workflowID,
 							TotalNumberOfActions: 1,
-							CurrentActionState:   pb.ActionState_ACTION_PENDING,
+							CurrentActionState:   pb.State_STATE_PENDING,
 						}, nil
 					},
 					GetWorkflowActionsFunc: func(ctx context.Context, wfID string) (*pb.WorkflowActionList, error) {
@@ -456,7 +457,7 @@ func TestReportActionStatus(t *testing.T) {
 				workerID:    workerID,
 				taskName:    "different-task-name",
 				actionName:  taskName,
-				actionState: pb.ActionState_ACTION_IN_PROGRESS,
+				actionState: pb.State_STATE_RUNNING,
 			},
 			want: want{
 				expectedError: true,
@@ -469,7 +470,7 @@ func TestReportActionStatus(t *testing.T) {
 						return &pb.WorkflowContext{
 							WorkflowId:           workflowID,
 							TotalNumberOfActions: 1,
-							CurrentActionState:   pb.ActionState_ACTION_PENDING,
+							CurrentActionState:   pb.State_STATE_PENDING,
 						}, nil
 					},
 					GetWorkflowActionsFunc: func(ctx context.Context, wfID string) (*pb.WorkflowActionList, error) {
@@ -493,7 +494,7 @@ func TestReportActionStatus(t *testing.T) {
 				workerID:    workerID,
 				taskName:    taskName,
 				actionName:  actionName,
-				actionState: pb.ActionState_ACTION_IN_PROGRESS,
+				actionState: pb.State_STATE_RUNNING,
 			},
 			want: want{
 				expectedError: true,
@@ -506,7 +507,7 @@ func TestReportActionStatus(t *testing.T) {
 						return &pb.WorkflowContext{
 							WorkflowId:           workflowID,
 							TotalNumberOfActions: 1,
-							CurrentActionState:   pb.ActionState_ACTION_PENDING,
+							CurrentActionState:   pb.State_STATE_PENDING,
 						}, nil
 					},
 					GetWorkflowActionsFunc: func(ctx context.Context, wfID string) (*pb.WorkflowActionList, error) {
@@ -533,17 +534,20 @@ func TestReportActionStatus(t *testing.T) {
 				workerID:    workerID,
 				taskName:    taskName,
 				actionName:  actionName,
-				actionState: pb.ActionState_ACTION_IN_PROGRESS,
+				actionState: pb.State_STATE_RUNNING,
 			},
 			want: want{
 				expectedError: true,
 			},
 		},
 	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), defaultTestTimeout)
+	defer cancel()
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
 			s := testServer(tc.args.db)
-			res, err := s.ReportActionStatus(context.TODO(),
+			res, err := s.ReportActionStatus(ctx,
 				&pb.WorkflowActionStatus{
 					WorkflowId:   tc.args.workflowID,
 					ActionName:   tc.args.actionName,
@@ -617,12 +621,15 @@ func TestUpdateWorkflowData(t *testing.T) {
 			},
 		},
 	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), defaultTestTimeout)
+	defer cancel()
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
 			s := testServer(tc.args.db)
 			res, err := s.UpdateWorkflowData(
-				context.TODO(), &pb.UpdateWorkflowDataRequest{
-					WorkflowID: tc.args.workflowID,
+				ctx, &pb.UpdateWorkflowDataRequest{
+					WorkflowId: tc.args.workflowID,
 					Data:       tc.args.data,
 				})
 			if err != nil {
@@ -704,12 +711,13 @@ func TestGetWorkflowData(t *testing.T) {
 			},
 		},
 	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), defaultTestTimeout)
+	defer cancel()
 	for name, tc := range testCases {
 		s := testServer(tc.args.db)
 		t.Run(name, func(t *testing.T) {
-			res, err := s.GetWorkflowData(
-				context.TODO(), &pb.GetWorkflowDataRequest{WorkflowID: tc.args.workflowID},
-			)
+			res, err := s.GetWorkflowData(ctx, &pb.GetWorkflowDataRequest{WorkflowId: tc.args.workflowID})
 			if err != nil {
 				assert.True(t, tc.want.expectedError)
 				assert.Error(t, err)
@@ -873,12 +881,13 @@ func TestGetWorkflowMetadata(t *testing.T) {
 			},
 		},
 	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), defaultTestTimeout)
+	defer cancel()
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
 			s := testServer(tc.args.db)
-			res, err := s.GetWorkflowMetadata(
-				context.TODO(), &pb.GetWorkflowDataRequest{WorkflowID: tc.args.workflowID},
-			)
+			res, err := s.GetWorkflowMetadata(ctx, &pb.GetWorkflowDataRequest{WorkflowId: tc.args.workflowID})
 			if err != nil {
 				assert.True(t, tc.want.expectedError)
 				assert.Error(t, err)
@@ -943,12 +952,13 @@ func TestGetWorkflowDataVersion(t *testing.T) {
 			},
 		},
 	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), defaultTestTimeout)
+	defer cancel()
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
 			s := testServer(tc.args.db)
-			res, err := s.GetWorkflowDataVersion(
-				context.TODO(), &pb.GetWorkflowDataRequest{WorkflowID: workflowID},
-			)
+			res, err := s.GetWorkflowDataVersion(ctx, &pb.GetWorkflowDataRequest{WorkflowId: workflowID})
 			assert.Equal(t, tc.want.version, res.Version)
 			if err != nil {
 				assert.True(t, tc.want.expectedError)
@@ -980,7 +990,7 @@ func TestIsApplicableToSend(t *testing.T) {
 						return &pb.WorkflowContext{
 							WorkflowId:           workflowID,
 							TotalNumberOfActions: 1,
-							CurrentActionState:   pb.ActionState_ACTION_FAILED,
+							CurrentActionState:   pb.State_STATE_FAILED,
 						}, nil
 					},
 				},
@@ -996,7 +1006,7 @@ func TestIsApplicableToSend(t *testing.T) {
 						return &pb.WorkflowContext{
 							WorkflowId:           workflowID,
 							TotalNumberOfActions: 1,
-							CurrentActionState:   pb.ActionState_ACTION_FAILED,
+							CurrentActionState:   pb.State_STATE_FAILED,
 						}, nil
 					},
 				},
@@ -1012,7 +1022,7 @@ func TestIsApplicableToSend(t *testing.T) {
 						return &pb.WorkflowContext{
 							WorkflowId:           workflowID,
 							TotalNumberOfActions: 1,
-							CurrentActionState:   pb.ActionState_ACTION_PENDING,
+							CurrentActionState:   pb.State_STATE_PENDING,
 						}, nil
 					},
 					GetWorkflowActionsFunc: func(ctx context.Context, wfID string) (*pb.WorkflowActionList, error) {
@@ -1031,7 +1041,7 @@ func TestIsApplicableToSend(t *testing.T) {
 						return &pb.WorkflowContext{
 							WorkflowId:           workflowID,
 							TotalNumberOfActions: 1,
-							CurrentActionState:   pb.ActionState_ACTION_SUCCESS,
+							CurrentActionState:   pb.State_STATE_SUCCESS,
 						}, nil
 					},
 					GetWorkflowActionsFunc: func(ctx context.Context, wfID string) (*pb.WorkflowActionList, error) {
@@ -1060,7 +1070,7 @@ func TestIsApplicableToSend(t *testing.T) {
 						return &pb.WorkflowContext{
 							WorkflowId:           workflowID,
 							TotalNumberOfActions: 1,
-							CurrentActionState:   pb.ActionState_ACTION_IN_PROGRESS,
+							CurrentActionState:   pb.State_STATE_RUNNING,
 						}, nil
 					},
 					GetWorkflowActionsFunc: func(ctx context.Context, wfID string) (*pb.WorkflowActionList, error) {
@@ -1089,7 +1099,7 @@ func TestIsApplicableToSend(t *testing.T) {
 						return &pb.WorkflowContext{
 							WorkflowId:           workflowID,
 							TotalNumberOfActions: 1,
-							CurrentActionState:   pb.ActionState_ACTION_SUCCESS,
+							CurrentActionState:   pb.State_STATE_SUCCESS,
 						}, nil
 					},
 					GetWorkflowActionsFunc: func(ctx context.Context, wfID string) (*pb.WorkflowActionList, error) {
@@ -1125,7 +1135,7 @@ func TestIsApplicableToSend(t *testing.T) {
 						return &pb.WorkflowContext{
 							WorkflowId:           workflowID,
 							TotalNumberOfActions: 1,
-							CurrentActionState:   pb.ActionState_ACTION_IN_PROGRESS,
+							CurrentActionState:   pb.State_STATE_RUNNING,
 						}, nil
 					},
 					GetWorkflowActionsFunc: func(ctx context.Context, wfID string) (*pb.WorkflowActionList, error) {
@@ -1155,13 +1165,14 @@ func TestIsApplicableToSend(t *testing.T) {
 			},
 		},
 	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), defaultTestTimeout)
+	defer cancel()
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
 			s := testServer(tc.args.db)
-			wfContext, _ := s.db.GetWorkflowContexts(context.TODO(), workflowID)
-			res := isApplicableToSend(
-				context.TODO(), wfContext, workerID, s.db,
-			)
+			wfContext, _ := s.db.GetWorkflowContexts(ctx, workflowID)
+			res := isApplicableToSend(ctx, wfContext, workerID, s.db)
 			assert.Equal(t, tc.want.isApplicable, res)
 		})
 	}
@@ -1187,7 +1198,7 @@ func TestIsLastAction(t *testing.T) {
 						return &pb.WorkflowContext{
 							WorkflowId:           workflowID,
 							TotalNumberOfActions: 1,
-							CurrentActionState:   pb.ActionState_ACTION_SUCCESS,
+							CurrentActionState:   pb.State_STATE_SUCCESS,
 						}, nil
 					},
 					GetWorkflowActionsFunc: func(ctx context.Context, wfID string) (*pb.WorkflowActionList, error) {
@@ -1223,7 +1234,7 @@ func TestIsLastAction(t *testing.T) {
 						return &pb.WorkflowContext{
 							WorkflowId:           workflowID,
 							TotalNumberOfActions: 1,
-							CurrentActionState:   pb.ActionState_ACTION_SUCCESS,
+							CurrentActionState:   pb.State_STATE_SUCCESS,
 						}, nil
 					},
 					GetWorkflowActionsFunc: func(ctx context.Context, wfID string) (*pb.WorkflowActionList, error) {
@@ -1246,11 +1257,14 @@ func TestIsLastAction(t *testing.T) {
 			},
 		},
 	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), defaultTestTimeout)
+	defer cancel()
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
 			s := testServer(tc.args.db)
-			wfContext, _ := s.db.GetWorkflowContexts(context.TODO(), workflowID)
-			actions, _ := s.db.GetWorkflowActions(context.TODO(), workflowID)
+			wfContext, _ := s.db.GetWorkflowContexts(ctx, workflowID)
+			actions, _ := s.db.GetWorkflowActions(ctx, workflowID)
 			res := isLastAction(wfContext, actions)
 			assert.Equal(t, tc.want.isLastAction, res)
 		})

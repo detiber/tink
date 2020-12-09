@@ -3,10 +3,8 @@ package grpcserver
 import (
 	"context"
 	"crypto/tls"
-	"io/ioutil"
 	"net"
 	"os"
-	"strings"
 	"sync"
 	"time"
 
@@ -43,32 +41,25 @@ type server struct {
 }
 
 // SetupGRPC setup and return a gRPC server
-func SetupGRPC(ctx context.Context, log log.Logger, facility string, errCh chan<- error) ([]byte, time.Time) {
+func SetupGRPC(ctx context.Context, log log.Logger, facility string, db *db.TinkDB, certBytes []byte, tlsCert tls.Certificate, modT time.Time, errCh chan<- error) {
 	params := []grpc.ServerOption{
 		grpc.UnaryInterceptor(grpc_prometheus.UnaryServerInterceptor),
 		grpc.StreamInterceptor(grpc_prometheus.StreamServerInterceptor),
+		grpc.Creds(credentials.NewServerTLSFromCert(&tlsCert)),
 	}
 	logger = log
 	metrics.SetupMetrics(facility, logger)
-	tinkDB := db.Connect(logger)
 	server := &server{
-		db:      tinkDB,
+		db:      db,
 		dbReady: true,
-	}
-	if cert := os.Getenv("TINKERBELL_TLS_CERT"); cert != "" {
-		server.cert = []byte(cert)
-		server.modT = time.Now()
-	} else {
-		tlsCert, certPEM, modT := getCerts(facility, logger)
-		params = append(params, grpc.Creds(credentials.NewServerTLSFromCert(&tlsCert)))
-		server.cert = certPEM
-		server.modT = modT
+		cert:    certBytes,
+		modT:    modT,
 	}
 
 	// register servers
 	s := grpc.NewServer(params...)
-	template.RegisterTemplateServer(s, server)
-	workflow.RegisterWorkflowSvcServer(s, server)
+	template.RegisterTemplateServiceServer(s, server)
+	workflow.RegisterWorkflowServiceServer(s, server)
 	hardware.RegisterHardwareServiceServer(s, server)
 
 	grpc_prometheus.Register(s)
@@ -92,56 +83,4 @@ func SetupGRPC(ctx context.Context, log log.Logger, facility string, errCh chan<
 		<-ctx.Done()
 		s.GracefulStop()
 	}()
-	return server.cert, server.modT
-}
-
-func getCerts(facility string, logger log.Logger) (tls.Certificate, []byte, time.Time) {
-	var (
-		certPEM []byte
-		modT    time.Time
-	)
-
-	certsDir := os.Getenv("TINKERBELL_CERTS_DIR")
-	if certsDir == "" {
-		certsDir = "/certs/" + facility
-	}
-	if !strings.HasSuffix(certsDir, "/") {
-		certsDir += "/"
-	}
-
-	certFile, err := os.Open(certsDir + "bundle.pem")
-	if err != nil {
-		err = errors.Wrap(err, "failed to open TLS cert")
-		logger.Error(err)
-		panic(err)
-	}
-
-	if stat, err := certFile.Stat(); err != nil {
-		err = errors.Wrap(err, "failed to stat TLS cert")
-		logger.Error(err)
-		panic(err)
-	} else {
-		modT = stat.ModTime()
-	}
-
-	certPEM, err = ioutil.ReadAll(certFile)
-	if err != nil {
-		err = errors.Wrap(err, "failed to read TLS cert")
-		logger.Error(err)
-		panic(err)
-	}
-	keyPEM, err := ioutil.ReadFile(certsDir + "server-key.pem")
-	if err != nil {
-		err = errors.Wrap(err, "failed to read TLS key")
-		logger.Error(err)
-		panic(err)
-	}
-
-	cert, err := tls.X509KeyPair(certPEM, keyPEM)
-	if err != nil {
-		err = errors.Wrap(err, "failed to ingest TLS files")
-		logger.Error(err)
-		panic(err)
-	}
-	return cert, certPEM, modT
 }

@@ -2,17 +2,13 @@ package vagrant
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"os/exec"
 	"strings"
 	"syscall"
-
-	"golang.org/x/crypto/ssh"
 )
 
 type Vagrant struct {
@@ -22,7 +18,6 @@ type Vagrant struct {
 	Workdir             string
 	provisioningProcess *os.Process
 	async               bool
-	sshConn             *ssh.Client
 	Stdout              io.ReadWriter
 	Stderr              io.ReadWriter
 }
@@ -150,10 +145,6 @@ func (v *Vagrant) provision(ctx context.Context) error {
 }
 
 func (v *Vagrant) Destroy(ctx context.Context) error {
-	if v.sshConn != nil {
-		v.sshConn.Close()
-	}
-
 	// A destroy fails if there are any other process locking that particular
 	// machine. In our case a worker machine starts async because the
 	// provisioning never ends it hangs forever saying "impossible to connect
@@ -186,55 +177,16 @@ func (v *Vagrant) Destroy(ctx context.Context) error {
 	return nil
 }
 
-func (v *Vagrant) Exec(ctx context.Context, args ...string) ([]byte, error) {
-	if v.sshConn == nil {
-		signer, err := loadPrivateKey()
-		if err != nil {
-			return nil, err
-		}
-
-		config := &ssh.ClientConfig{
-			HostKeyCallback: ssh.InsecureIgnoreHostKey(),
-			User:            "vagrant",
-			Auth:            []ssh.AuthMethod{ssh.PublicKeys(signer), ssh.Password("vagrant")},
-		}
-
-		conn, err := ssh.Dial("tcp", "localhost:2222", config)
-		if err != nil {
-			return nil, fmt.Errorf("dial failed:%v", err)
-		}
-
-		v.sshConn = conn
-	}
-
-	session, err := v.sshConn.NewSession()
+func (v *Vagrant) Exec(ctx context.Context, args ...string) error {
+	cmd, err := v.execCmd(ctx, "ssh", "-c", strings.Join(args, " "), v.Name)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	defer session.Close()
-
-	v.log("[Exec %s] %s", v.Name, strings.Join(args, " "))
-
-	var stdoutBuf bytes.Buffer
-	session.Stdout = &stdoutBuf
-	session.Run(strings.Join(args, " "))
-
-	v.log("[Exec %s] %s Output:\n%s", v.Name, strings.Join(args, " "), stdoutBuf.String())
-
-	return stdoutBuf.Bytes(), nil
-}
-
-func loadPrivateKey() (ssh.Signer, error) {
-	pemBytes, err := ioutil.ReadFile(os.Getenv("HOME") + "/.vagrant.d/insecure_private_key")
+	err = cmd.Wait()
 	if err != nil {
-		return nil, err
+		return fmt.Errorf("exec error \"%s\": %v", err, cmd.String())
 	}
 
-	signer, err := ssh.ParsePrivateKey(pemBytes)
-	if err != nil {
-		return nil, err
-	}
-
-	return signer, nil
+	return nil
 }

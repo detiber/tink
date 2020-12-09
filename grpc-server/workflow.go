@@ -4,12 +4,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
+	"strconv"
 	"text/template"
 
+	"github.com/google/uuid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
-	uuid "github.com/satori/go.uuid"
 	"github.com/tinkerbell/tink/db"
 	"github.com/tinkerbell/tink/metrics"
 	"github.com/tinkerbell/tink/protos/workflow"
@@ -17,12 +17,17 @@ import (
 )
 
 var state = map[int32]workflow.State{
-	0: workflow.State_PENDING,
-	1: workflow.State_RUNNING,
-	2: workflow.State_FAILED,
-	3: workflow.State_TIMEOUT,
-	4: workflow.State_SUCCESS,
+	0: workflow.State_STATE_PENDING,
+	1: workflow.State_STATE_RUNNING,
+	2: workflow.State_STATE_FAILED,
+	3: workflow.State_STATE_TIMEOUT,
+	4: workflow.State_STATE_SUCCESS,
 }
+
+const (
+	errFailedToGetTemplate = "failed to get template with ID %s"
+	errTemplateParsing     = "failed to parse template with ID %s"
+)
 
 // CreateWorkflow implements workflow.CreateWorkflow
 func (s *server) CreateWorkflow(ctx context.Context, in *workflow.CreateRequest) (*workflow.CreateResponse, error) {
@@ -30,27 +35,12 @@ func (s *server) CreateWorkflow(ctx context.Context, in *workflow.CreateRequest)
 	labels := prometheus.Labels{"method": "CreateWorkflow", "op": ""}
 	metrics.CacheInFlight.With(labels).Inc()
 	defer metrics.CacheInFlight.With(labels).Dec()
-	msg := ""
+
+	const msg = "creating a new workflow"
 	labels["op"] = "createworkflow"
-	msg = "creating a new workflow"
-	id := uuid.NewV4()
-	//var data string
-	fn := func() error {
-		wf := db.Workflow{
-			ID:       id.String(),
-			Template: in.Template,
-			Hardware: in.Hardware,
-			State:    workflow.State_value[workflow.State_PENDING.String()],
-		}
-		data, err := createYaml(ctx, s.db, in.Template, in.Hardware)
-		if err != nil {
-			return errors.Wrap(err, "Failed to create Yaml")
-		}
-		err = s.db.CreateWorkflow(ctx, wf, data, id)
-		if err != nil {
-			return err
-		}
-		return nil
+	id, err := uuid.NewUUID()
+	if err != nil {
+		return &workflow.CreateResponse{}, err
 	}
 
 	metrics.CacheTotals.With(labels).Inc()
@@ -58,8 +48,21 @@ func (s *server) CreateWorkflow(ctx context.Context, in *workflow.CreateRequest)
 	defer timer.ObserveDuration()
 
 	logger.Info(msg)
-	err := fn()
-	logger.Info("done " + msg)
+
+	data, err := createYaml(ctx, s.db, in.Template, in.Hardware)
+	if err != nil {
+		metrics.CacheErrors.With(labels).Inc()
+		logger.Error(err)
+		return &workflow.CreateResponse{}, err
+	}
+
+	wf := db.Workflow{
+		ID:       id.String(),
+		Template: in.Template,
+		Hardware: in.Hardware,
+		State:    workflow.State_value[workflow.State_STATE_PENDING.String()],
+	}
+	err = s.db.CreateWorkflow(ctx, wf, data, id)
 	if err != nil {
 		metrics.CacheErrors.With(labels).Inc()
 		l := logger
@@ -69,6 +72,9 @@ func (s *server) CreateWorkflow(ctx context.Context, in *workflow.CreateRequest)
 		l.Error(err)
 		return &workflow.CreateResponse{}, err
 	}
+
+	l := logger.With("workflowID", id.String())
+	l.Info("done " + msg)
 	return &workflow.CreateResponse{Id: id.String()}, err
 }
 
@@ -79,18 +85,15 @@ func (s *server) GetWorkflow(ctx context.Context, in *workflow.GetRequest) (*wor
 	metrics.CacheInFlight.With(labels).Inc()
 	defer metrics.CacheInFlight.With(labels).Dec()
 
-	msg := ""
+	const msg = "getting a workflow"
 	labels["op"] = "get"
-	msg = "getting a workflow"
 
-	fn := func() (db.Workflow, error) { return s.db.GetWorkflow(ctx, in.Id) }
 	metrics.CacheTotals.With(labels).Inc()
 	timer := prometheus.NewTimer(metrics.CacheDuration.With(labels))
 	defer timer.ObserveDuration()
 
 	logger.Info(msg)
-	w, err := fn()
-	logger.Info("done " + msg)
+	w, err := s.db.GetWorkflow(ctx, in.Id)
 	if err != nil {
 		metrics.CacheErrors.With(labels).Inc()
 		l := logger
@@ -110,6 +113,8 @@ func (s *server) GetWorkflow(ctx context.Context, in *workflow.GetRequest) (*wor
 		State:    state[w.State],
 		Data:     yamlData,
 	}
+	l := logger.With("workflowID", w.ID)
+	l.Info("done " + msg)
 	return wf, err
 }
 
@@ -120,21 +125,16 @@ func (s *server) DeleteWorkflow(ctx context.Context, in *workflow.GetRequest) (*
 	metrics.CacheInFlight.With(labels).Inc()
 	defer metrics.CacheInFlight.With(labels).Dec()
 
-	msg := ""
+	const msg = "deleting a workflow"
 	labels["op"] = "delete"
-	msg = "deleting a workflow"
-	fn := func() error {
-		// update only if not in running state
-		return s.db.DeleteWorkflow(ctx, in.Id, workflow.State_value[workflow.State_RUNNING.String()])
-	}
+	l := logger.With("workflowID", in.GetId())
 
 	metrics.CacheTotals.With(labels).Inc()
 	timer := prometheus.NewTimer(metrics.CacheDuration.With(labels))
 	defer timer.ObserveDuration()
 
-	logger.Info(msg)
-	err := fn()
-	logger.Info("done " + msg)
+	l.Info(msg)
+	err := s.db.DeleteWorkflow(ctx, in.Id, workflow.State_value[workflow.State_STATE_RUNNING.String()])
 	if err != nil {
 		metrics.CacheErrors.With(labels).Inc()
 		l := logger
@@ -143,11 +143,12 @@ func (s *server) DeleteWorkflow(ctx context.Context, in *workflow.GetRequest) (*
 		}
 		l.Error(err)
 	}
+	l.Info("done " + msg)
 	return &workflow.Empty{}, err
 }
 
 // ListWorkflows implements workflow.ListWorkflows
-func (s *server) ListWorkflows(_ *workflow.Empty, stream workflow.WorkflowSvc_ListWorkflowsServer) error {
+func (s *server) ListWorkflows(_ *workflow.Empty, stream workflow.WorkflowService_ListWorkflowsServer) error {
 	logger.Info("listworkflows")
 	labels := prometheus.Labels{"method": "ListWorkflows", "op": "list"}
 	metrics.CacheTotals.With(labels).Inc()
@@ -190,18 +191,15 @@ func (s *server) GetWorkflowContext(ctx context.Context, in *workflow.GetRequest
 	metrics.CacheInFlight.With(labels).Inc()
 	defer metrics.CacheInFlight.With(labels).Dec()
 
-	msg := ""
+	const msg = "getting a workflow"
 	labels["op"] = "get"
-	msg = "getting a workflow"
 
-	fn := func() (*workflowpb.WorkflowContext, error) { return s.db.GetWorkflowContexts(ctx, in.Id) }
 	metrics.CacheTotals.With(labels).Inc()
 	timer := prometheus.NewTimer(metrics.CacheDuration.With(labels))
 	defer timer.ObserveDuration()
 
 	logger.Info(msg)
-	w, err := fn()
-	logger.Info("done " + msg)
+	w, err := s.db.GetWorkflowContexts(ctx, in.Id)
 	if err != nil {
 		metrics.CacheErrors.With(labels).Inc()
 		l := logger
@@ -216,14 +214,24 @@ func (s *server) GetWorkflowContext(ctx context.Context, in *workflow.GetRequest
 		CurrentTask:          w.CurrentTask,
 		CurrentAction:        w.CurrentAction,
 		CurrentActionIndex:   w.CurrentActionIndex,
-		CurrentActionState:   workflow.ActionState(w.CurrentActionState),
+		CurrentActionState:   workflow.State(w.CurrentActionState),
 		TotalNumberOfActions: w.TotalNumberOfActions,
 	}
+	l := logger.With(
+		"workflowID", wf.GetWorkflowId(),
+		"currentWorker", wf.GetCurrentWorker(),
+		"currentTask", wf.GetCurrentTask(),
+		"currentAction", wf.GetCurrentAction(),
+		"currentActionIndex", strconv.FormatInt(wf.GetCurrentActionIndex(), 10),
+		"currentActionState", wf.GetCurrentActionState(),
+		"totalNumberOfActions", wf.GetTotalNumberOfActions(),
+	)
+	l.Info("done " + msg)
 	return wf, err
 }
 
 // ShowWorflowevents  implements workflow.ShowWorflowEvents
-func (s *server) ShowWorkflowEvents(req *workflow.GetRequest, stream workflow.WorkflowSvc_ShowWorkflowEventsServer) error {
+func (s *server) ShowWorkflowEvents(req *workflow.GetRequest, stream workflow.WorkflowService_ShowWorkflowEventsServer) error {
 	logger.Info("List workflows Events")
 	labels := prometheus.Labels{"method": "ShowWorkflowEvents", "op": "list"}
 	metrics.CacheTotals.With(labels).Inc()
@@ -245,7 +253,7 @@ func (s *server) ShowWorkflowEvents(req *workflow.GetRequest, stream workflow.Wo
 			WorkerId:     w.WorkerId,
 			TaskName:     w.TaskName,
 			ActionName:   w.ActionName,
-			ActionStatus: workflow.ActionState(w.ActionStatus),
+			ActionStatus: workflow.State(w.ActionStatus),
 			Seconds:      w.Seconds,
 			Message:      w.Message,
 			CreatedAt:    w.CreatedAt,
@@ -257,30 +265,35 @@ func (s *server) ShowWorkflowEvents(req *workflow.GetRequest, stream workflow.Wo
 		metrics.CacheErrors.With(labels).Inc()
 		return err
 	}
-	logger.Info("Done Listing workflows Events")
+	logger.Info("done listing workflows events")
 	metrics.CacheHits.With(labels).Inc()
 	return nil
 }
 
-func createYaml(ctx context.Context, db db.Database, temp string, devices string) (string, error) {
-	_, tempData, err := db.GetTemplate(ctx, temp)
-	if err != nil {
-		return "", err
+func createYaml(ctx context.Context, db db.Database, templateID string, devices string) (string, error) {
+	fields := map[string]string{
+		"id": templateID,
 	}
-	return renderTemplate(string(tempData), []byte(devices))
+	_, _, templateData, err := db.GetTemplate(ctx, fields)
+	if err != nil {
+		return "", errors.Wrapf(err, errFailedToGetTemplate, templateID)
+	}
+	return renderTemplate(templateID, templateData, []byte(devices))
 }
 
-func renderTemplate(tempData string, devices []byte) (string, error) {
+func renderTemplate(templateID, templateData string, devices []byte) (string, error) {
 	var hardware map[string]interface{}
 	err := json.Unmarshal(devices, &hardware)
 	if err != nil {
+		err = errors.Wrapf(err, errTemplateParsing, templateID)
 		logger.Error(err)
-		return "", nil
+		return "", err
 	}
 
 	t := template.New("workflow-template")
-	_, err = t.Parse(string(tempData))
+	_, err = t.Parse(string(templateData))
 	if err != nil {
+		err = errors.Wrapf(err, errTemplateParsing, templateID)
 		logger.Error(err)
 		return "", nil
 	}
@@ -288,8 +301,9 @@ func renderTemplate(tempData string, devices []byte) (string, error) {
 	buf := new(bytes.Buffer)
 	err = t.Execute(buf, hardware)
 	if err != nil {
-		return "", nil
+		err = errors.Wrapf(err, errTemplateParsing, templateID)
+		logger.Error(err)
+		return "", err
 	}
-	fmt.Println(buf.String())
 	return buf.String(), nil
 }

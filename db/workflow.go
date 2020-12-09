@@ -11,45 +11,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/docker/distribution/reference"
 	"github.com/golang/protobuf/ptypes"
 	"github.com/golang/protobuf/ptypes/timestamp"
+	"github.com/google/uuid"
 	"github.com/pkg/errors"
-	uuid "github.com/satori/go.uuid"
 	pb "github.com/tinkerbell/tink/protos/workflow"
-	"gopkg.in/yaml.v2"
-)
-
-type (
-	// Workflow holds details about the workflow to be executed
-	wfYamlstruct struct {
-		Version       string `yaml:"version"`
-		Name          string `yaml:"name"`
-		ID            string `yaml:"id"`
-		GlobalTimeout int    `yaml:"global_timeout"`
-		Tasks         []task `yaml:"tasks"`
-	}
-
-	// Task represents a task to be performed in a worflow
-	task struct {
-		Name        string            `yaml:"name"`
-		WorkerAddr  string            `yaml:"worker"`
-		Actions     []action          `yaml:"actions"`
-		Volumes     []string          `yaml:"volumes"`
-		Environment map[string]string `yaml:"environment"`
-	}
-
-	// Action is the basic executional unit for a workflow
-	action struct {
-		Name        string            `yaml:"name"`
-		Image       string            `yaml:"image"`
-		Timeout     int64             `yaml:"timeout"`
-		Command     []string          `yaml:"command"`
-		OnTimeout   []string          `yaml:"on-timeout"`
-		OnFailure   []string          `yaml:"on-failure"`
-		Volumes     []string          `yaml:"volumes,omitempty"`
-		Environment map[string]string `yaml:"environment,omitempty"`
-	}
+	wflow "github.com/tinkerbell/tink/workflow"
 )
 
 // Workflow represents a workflow instance in database
@@ -73,12 +40,12 @@ func (d TinkDB) CreateWorkflow(ctx context.Context, wf Workflow, data string, id
 
 	err = insertActionList(ctx, d.instance, data, id, tx)
 	if err != nil {
-		return errors.Wrap(err, "Failed to insert in workflow_state")
+		return errors.Wrap(err, "failed to create workflow")
 
 	}
 	err = insertInWorkflow(ctx, d.instance, wf, tx)
 	if err != nil {
-		return errors.Wrap(err, "Failed to workflow")
+		return errors.Wrap(err, "failed to create workflow")
 
 	}
 	err = tx.Commit()
@@ -106,16 +73,15 @@ func insertInWorkflow(ctx context.Context, db *sql.DB, wf Workflow, tx *sql.Tx) 
 }
 
 func insertIntoWfWorkerTable(ctx context.Context, db *sql.DB, wfID uuid.UUID, workerID uuid.UUID, tx *sql.Tx) error {
-	// TODO This command is not 100% reliable for concurrent write operations
 	_, err := tx.Exec(`
 	INSERT INTO
 		workflow_worker_map (workflow_id, worker_id)
-	SELECT $1, $2
-	WHERE
-		NOT EXISTS (
-			SELECT workflow_id FROM workflow_worker_map WHERE workflow_id = $1 AND worker_id = $2
-		);
-	`, wfID, workerID)
+	VALUES
+	        ($1, $2);
+	`, wfID, workerID) 
+	//ON CONFLICT (workflow_id, worker_id)
+	//DO NOTHING;
+	// `, wfID, workerID)
 	if err != nil {
 		return errors.Wrap(err, "INSERT in to workflow_worker_map")
 	}
@@ -124,17 +90,14 @@ func insertIntoWfWorkerTable(ctx context.Context, db *sql.DB, wfID uuid.UUID, wo
 
 // Insert actions in the workflow_state table
 func insertActionList(ctx context.Context, db *sql.DB, yamlData string, id uuid.UUID, tx *sql.Tx) error {
-	wfymldata, err := parseYaml([]byte(yamlData))
+	wf, err := wflow.Parse([]byte(yamlData))
 	if err != nil {
 		return err
 	}
-	err = validateTemplateValues(wfymldata.Tasks)
-	if err != nil {
-		return errors.Wrap(err, "Invalid Template")
-	}
+
 	var actionList []*pb.WorkflowAction
 	var uniqueWorkerID uuid.UUID
-	for _, task := range wfymldata.Tasks {
+	for _, task := range wf.Tasks {
 		taskEnvs := map[string]string{}
 		taskVolumes := map[string]string{}
 		for _, vol := range task.Volumes {
@@ -147,11 +110,9 @@ func insertActionList(ctx context.Context, db *sql.DB, yamlData string, id uuid.
 
 		workerID, err := getWorkerID(ctx, db, task.WorkerAddr)
 		if err != nil {
-			return err
-		} else if workerID == "" {
-			return fmt.Errorf("hardware mentioned with reference %s not found", task.WorkerAddr)
+			return errors.WithMessage(err, "unable to insert into action list")
 		}
-		workerUID, err := uuid.FromString(workerID)
+		workerUID, err := uuid.Parse(workerID)
 		if err != nil {
 			return err
 		}
@@ -230,7 +191,7 @@ func insertActionList(ctx context.Context, db *sql.DB, yamlData string, id uuid.
 
 // InsertIntoWfDataTable : Insert ephemeral data in workflow_data table
 func (d TinkDB) InsertIntoWfDataTable(ctx context.Context, req *pb.UpdateWorkflowDataRequest) error {
-	version, err := getLatestVersionWfData(ctx, d.instance, req.GetWorkflowID())
+	version, err := getLatestVersionWfData(ctx, d.instance, req.GetWorkflowId())
 	if err != nil {
 		return err
 	}
@@ -247,7 +208,7 @@ func (d TinkDB) InsertIntoWfDataTable(ctx context.Context, req *pb.UpdateWorkflo
 		workflow_data (workflow_id, version, metadata, data)
 	VALUES
 		($1, $2, $3, $4);
-	`, req.GetWorkflowID(), version, string(req.GetMetadata()), string(req.GetData()))
+	`, req.GetWorkflowId(), version, string(req.GetMetadata()), string(req.GetData()))
 	if err != nil {
 		return errors.Wrap(err, "INSERT Into workflow_data")
 	}
@@ -260,7 +221,7 @@ func (d TinkDB) InsertIntoWfDataTable(ctx context.Context, req *pb.UpdateWorkflo
 			data = NULL
 		WHERE
 			workflow_id = $1 AND version = $2;
-		`, req.GetWorkflowID(), cleanVersion)
+		`, req.GetWorkflowId(), cleanVersion)
 		if err != nil {
 			return errors.Wrap(err, "UPDATE")
 		}
@@ -277,7 +238,7 @@ func (d TinkDB) InsertIntoWfDataTable(ctx context.Context, req *pb.UpdateWorkflo
 func (d TinkDB) GetfromWfDataTable(ctx context.Context, req *pb.GetWorkflowDataRequest) ([]byte, error) {
 	version := req.GetVersion()
 	if req.Version == 0 {
-		v, err := getLatestVersionWfData(ctx, d.instance, req.GetWorkflowID())
+		v, err := getLatestVersionWfData(ctx, d.instance, req.GetWorkflowId())
 		if err != nil {
 			return []byte(""), err
 		}
@@ -289,7 +250,7 @@ func (d TinkDB) GetfromWfDataTable(ctx context.Context, req *pb.GetWorkflowDataR
 	WHERE
 		workflow_id = $1 AND version = $2
 	`
-	row := d.instance.QueryRowContext(ctx, query, req.GetWorkflowID(), version)
+	row := d.instance.QueryRowContext(ctx, query, req.GetWorkflowId(), version)
 	buf := []byte{}
 	err := row.Scan(&buf)
 	if err == nil {
@@ -308,7 +269,7 @@ func (d TinkDB) GetfromWfDataTable(ctx context.Context, req *pb.GetWorkflowDataR
 func (d TinkDB) GetWorkflowMetadata(ctx context.Context, req *pb.GetWorkflowDataRequest) ([]byte, error) {
 	version := req.GetVersion()
 	if req.Version == 0 {
-		v, err := getLatestVersionWfData(ctx, d.instance, req.GetWorkflowID())
+		v, err := getLatestVersionWfData(ctx, d.instance, req.GetWorkflowId())
 		if err != nil {
 			return []byte(""), err
 		}
@@ -320,7 +281,7 @@ func (d TinkDB) GetWorkflowMetadata(ctx context.Context, req *pb.GetWorkflowData
 	WHERE
 		workflow_id = $1 AND version = $2
 	`
-	row := d.instance.QueryRowContext(ctx, query, req.GetWorkflowID(), version)
+	row := d.instance.QueryRowContext(ctx, query, req.GetWorkflowId(), version)
 	buf := []byte{}
 	err := row.Scan(&buf)
 	if err == nil {
@@ -567,7 +528,7 @@ func (d TinkDB) GetWorkflowContexts(ctx context.Context, wfID string) (*pb.Workf
 	row := d.instance.QueryRowContext(ctx, query, wfID)
 	var cw, ct, ca string
 	var cai, tact int64
-	var cas pb.ActionState
+	var cas pb.State
 	err := row.Scan(&cw, &ct, &ca, &cai, &cas, &tact)
 	if err == nil {
 		return &pb.WorkflowContext{
@@ -673,7 +634,7 @@ func (d TinkDB) ShowWorkflowEvents(wfID string, fn func(wfs *pb.WorkflowActionSt
 			ActionName:   aName,
 			Seconds:      secs,
 			Message:      msg,
-			ActionStatus: pb.ActionState(status),
+			ActionStatus: pb.State(status),
 			CreatedAt:    createdAt,
 		}
 		err = fn(wfs)
@@ -704,15 +665,6 @@ func getLatestVersionWfData(ctx context.Context, db *sql.DB, wfID string) (int32
 	return version, nil
 }
 
-func parseYaml(ymlContent []byte) (*wfYamlstruct, error) {
-	var workflow = wfYamlstruct{}
-	err := yaml.UnmarshalStrict(ymlContent, &workflow)
-	if err != nil {
-		return &wfYamlstruct{}, err
-	}
-	return &workflow, nil
-}
-
 func getWorkerIDbyMac(ctx context.Context, db *sql.DB, mac string) (string, error) {
 	arg := `
 	{
@@ -736,7 +688,11 @@ func getWorkerIDbyMac(ctx context.Context, db *sql.DB, mac string) (string, erro
 		data @> $1
 	`
 
-	return get(ctx, db, query, arg)
+	id, err := get(ctx, db, query, arg)
+	if errors.Cause(err) == sql.ErrNoRows {
+		err = errors.WithMessage(errors.New(mac), "mac")
+	}
+	return id, err
 }
 
 func getWorkerIDbyIP(ctx context.Context, db *sql.DB, ip string) (string, error) {
@@ -780,7 +736,11 @@ func getWorkerIDbyIP(ctx context.Context, db *sql.DB, ip string) (string, error)
         )
         `
 
-	return get(ctx, db, query, instance, hardwareOrManagement)
+	id, err := get(ctx, db, query, instance, hardwareOrManagement)
+	if errors.Cause(err) == sql.ErrNoRows {
+		err = errors.WithMessage(errors.New(ip), "ip")
+	}
+	return id, err
 }
 
 func getWorkerID(ctx context.Context, db *sql.DB, addr string) (string, error) {
@@ -790,59 +750,12 @@ func getWorkerID(ctx context.Context, db *sql.DB, addr string) (string, error) {
 		if ip == nil || ip.To4() == nil {
 			return "", fmt.Errorf("invalid worker address: %s", addr)
 		}
-		return getWorkerIDbyIP(ctx, db, addr)
+		id, err := getWorkerIDbyIP(ctx, db, addr)
+		return id, errors.WithMessage(err, "no worker found")
 
 	}
-	return getWorkerIDbyMac(ctx, db, addr)
-}
-
-func isValidLength(name string) error {
-	if len(name) > 200 {
-		return fmt.Errorf("Task/Action Name %s in the Template as more than 200 characters", name)
-	}
-	return nil
-}
-
-func isValidImageName(name string) error {
-	_, err := reference.ParseNormalizedNamed(name)
-	if err != nil {
-		fmt.Println(err)
-		return err
-	}
-	return nil
-}
-
-func validateTemplateValues(tasks []task) error {
-	taskNameMap := make(map[string]struct{})
-	for _, task := range tasks {
-		err := isValidLength(task.Name)
-		if err != nil {
-			return err
-		}
-		_, ok := taskNameMap[task.Name]
-		if ok {
-			return fmt.Errorf("provided template has duplicate task name \"%s\"", task.Name)
-		}
-		taskNameMap[task.Name] = struct{}{}
-		actionNameMap := make(map[string]struct{})
-		for _, action := range task.Actions {
-			err := isValidLength(action.Name)
-			if err != nil {
-				return err
-			}
-			err = isValidImageName(action.Image)
-			if err != nil {
-				return fmt.Errorf("invalid Image name %s", action.Image)
-			}
-
-			_, ok := actionNameMap[action.Name]
-			if ok {
-				return fmt.Errorf("provided template has duplicate action name \"%s\" in task \"%s\"", action.Name, task.Name)
-			}
-			actionNameMap[action.Name] = struct{}{}
-		}
-	}
-	return nil
+	id, err := getWorkerIDbyMac(ctx, db, addr)
+	return id, errors.WithMessage(err, "no worker found")
 }
 
 func init() {

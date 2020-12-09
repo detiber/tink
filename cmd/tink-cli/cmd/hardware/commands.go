@@ -6,15 +6,12 @@ import (
 	"log"
 	"os"
 
-	"github.com/tinkerbell/tink/util"
-
-	"github.com/tinkerbell/tink/protos/hardware"
-
+	"github.com/google/uuid"
 	"github.com/jedib0t/go-pretty/table"
-
 	"github.com/pkg/errors"
-	uuid "github.com/satori/go.uuid"
 	"github.com/spf13/cobra"
+	"github.com/tinkerbell/tink/pkg"
+	"github.com/tinkerbell/tink/protos/hardware"
 )
 
 // SubCommands holds the sub commands for template command
@@ -26,7 +23,7 @@ func verifyUUIDs(args []string) error {
 		return errors.New("requires at least one id")
 	}
 	for _, arg := range args {
-		if _, err := uuid.FromString(arg); err != nil {
+		if _, err := uuid.Parse(arg); err != nil {
 			return fmt.Errorf("invalid uuid: %s", arg)
 		}
 	}
@@ -48,7 +45,7 @@ func printOutput(data bool, hw *hardware.Hardware, input string) {
 		}
 		t.Render()
 	} else {
-		hwData, err := json.Marshal(util.HardwareWrapper{Hardware: hw})
+		hwData, err := json.Marshal(pkg.HardwareWrapper{Hardware: hw})
 		if err != nil {
 			log.Fatal("Failed to marshal hardware data: ", err)
 		}

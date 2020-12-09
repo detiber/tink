@@ -9,11 +9,11 @@ import (
 	"time"
 
 	"github.com/tinkerbell/tink/client"
+	"github.com/tinkerbell/tink/pkg"
 	"github.com/tinkerbell/tink/protos/hardware"
 	"github.com/tinkerbell/tink/protos/template"
 	"github.com/tinkerbell/tink/protos/workflow"
 	vagrant "github.com/tinkerbell/tink/test/_vagrant"
-	"github.com/tinkerbell/tink/util"
 )
 
 func TestVagrantSetupGuide(t *testing.T) {
@@ -35,23 +35,19 @@ func TestVagrantSetupGuide(t *testing.T) {
 		}
 	}()
 
-	_, err = machine.Exec(ctx, "cd /vagrant/deploy && source ../envrc && docker-compose up -d")
-	if err != nil {
+	if err = machine.Exec(ctx, "cd /vagrant/deploy && source ../envrc && docker-compose up -d"); err != nil {
 		t.Fatal(err)
 	}
 
-	_, err = machine.Exec(ctx, "docker pull hello-world")
-	if err != nil {
+	if err = machine.Exec(ctx, "docker pull hello-world"); err != nil {
 		t.Fatal(err)
 	}
 
-	_, err = machine.Exec(ctx, "docker tag hello-world 192.168.1.1/hello-world")
-	if err != nil {
+	if err = machine.Exec(ctx, "docker tag hello-world 192.168.1.1/hello-world"); err != nil {
 		t.Fatal(err)
 	}
 
-	_, err = machine.Exec(ctx, "docker push 192.168.1.1/hello-world")
-	if err != nil {
+	if err = machine.Exec(ctx, "docker push 192.168.1.1/hello-world"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -121,14 +117,14 @@ func TestVagrantSetupGuide(t *testing.T) {
 			t.Fatal(err)
 		}
 		for event, err := events.Recv(); err == nil && event != nil; event, err = events.Recv() {
-			if event.ActionName == "hello_world" && event.ActionStatus == workflow.ActionState_ACTION_SUCCESS {
+			if event.ActionName == "hello_world" && event.ActionStatus == workflow.ActionState_ACTION_STATE_SUCCESS {
 				t.Logf("event %s SUCCEEDED as expected", event.ActionName)
 				return
 			}
 		}
-		time.Sleep(5 * time.Second)
+		time.Sleep(10 * time.Second)
 	}
-	t.Fatal("Workflow never got to a complite state or it didn't make it on time (5m)")
+	t.Fatal("Workflow never got to a complite state or it didn't make it on time (10m)")
 }
 
 func createWorkflow(ctx context.Context, templateID string) (string, error) {
@@ -194,7 +190,7 @@ func registerHardware(ctx context.Context) error {
     ]
   }
 }`)
-	hw := util.HardwareWrapper{Hardware: &hardware.Hardware{}}
+	hw := pkg.HardwareWrapper{Hardware: &hardware.Hardware{}}
 	err := json.Unmarshal(data, &hw)
 	if err != nil {
 		return err

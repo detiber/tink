@@ -3,13 +3,16 @@ package db
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"time"
 
 	"github.com/golang/protobuf/ptypes/timestamp"
+	"github.com/google/uuid"
 	"github.com/lib/pq"
 	"github.com/packethost/pkg/log"
 	"github.com/pkg/errors"
-	uuid "github.com/satori/go.uuid"
+	migrate "github.com/rubenv/sql-migrate"
+	"github.com/tinkerbell/tink/db/migration"
 	pb "github.com/tinkerbell/tink/protos/workflow"
 )
 
@@ -33,9 +36,9 @@ type hardware interface {
 
 type template interface {
 	CreateTemplate(ctx context.Context, name string, data string, id uuid.UUID) error
-	GetTemplate(ctx context.Context, id string) (string, string, error)
+	GetTemplate(ctx context.Context, fields map[string]string) (string, string, string, error)
 	DeleteTemplate(ctx context.Context, name string) error
-	ListTemplates(fn func(id, n string, in, del *timestamp.Timestamp) error) error
+	ListTemplates(in string, fn func(id, n string, in, del *timestamp.Timestamp) error) error
 	UpdateTemplate(ctx context.Context, name string, data string, id uuid.UUID) error
 }
 
@@ -73,6 +76,19 @@ func Connect(lg log.Logger) *TinkDB {
 	return &TinkDB{instance: db}
 }
 
+func (t *TinkDB) Migrate() (int, error) {
+	return migrate.Exec(t.instance, "postgres", migration.GetMigrations(), migrate.Up)
+}
+
+func (t *TinkDB) CheckRequiredMigrations() (int, error) {
+	migrations := migration.GetMigrations().Migrations
+	records, err := migrate.GetMigrationRecords(t.instance, "postgres")
+	if err != nil {
+		return 0, err
+	}
+	return len(migrations) - len(records), nil
+}
+
 // Error returns the underlying cause for error
 func Error(err error) *pq.Error {
 	if pqErr, ok := errors.Cause(err).(*pq.Error); ok {
@@ -86,16 +102,20 @@ func get(ctx context.Context, db *sql.DB, query string, args ...interface{}) (st
 
 	buf := []byte{}
 	err := row.Scan(&buf)
-	if err == nil {
-		return string(buf), nil
-	}
-
-	if err != sql.ErrNoRows {
-		err = errors.Wrap(err, "SELECT")
+	if err != nil {
 		logger.Error(err)
-	} else {
-		err = nil
+		return "", errors.Wrap(err, "SELECT")
 	}
+	return string(buf), nil
+}
 
-	return "", err
+// buildGetCondition builds a where condition string in the format "column_name = 'field_value' AND"
+// takes in a map[string]string with keys being the column name and the values being the field values
+func buildGetCondition(fields map[string]string) (string, error) {
+	for column, field := range fields {
+		if field != "" {
+			return fmt.Sprintf("%s = '%s' AND", column, field), nil
+		}
+	}
+	return "", errors.New("one GetBy field must be set to build a get condition")
 }

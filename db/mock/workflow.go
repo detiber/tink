@@ -4,14 +4,14 @@ import (
 	"context"
 	"time"
 
-	uuid "github.com/satori/go.uuid"
+	"github.com/google/uuid"
 	"github.com/tinkerbell/tink/db"
 	pb "github.com/tinkerbell/tink/protos/workflow"
 )
 
 // CreateWorkflow creates a new workflow
 func (d DB) CreateWorkflow(ctx context.Context, wf db.Workflow, data string, id uuid.UUID) error {
-	return nil
+	return d.CreateWorkflowFunc(ctx, wf, data, id)
 }
 
 // InsertIntoWfDataTable : Insert ephemeral data in workflow_data table

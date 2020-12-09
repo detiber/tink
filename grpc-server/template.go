@@ -2,11 +2,12 @@ package grpcserver
 
 import (
 	"context"
+	"strings"
 
 	"github.com/golang/protobuf/ptypes/timestamp"
+	"github.com/google/uuid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
-	uuid "github.com/satori/go.uuid"
 	"github.com/tinkerbell/tink/db"
 	"github.com/tinkerbell/tink/metrics"
 	"github.com/tinkerbell/tink/protos/template"
@@ -19,19 +20,16 @@ func (s *server) CreateTemplate(ctx context.Context, in *template.WorkflowTempla
 	metrics.CacheInFlight.With(labels).Inc()
 	defer metrics.CacheInFlight.With(labels).Dec()
 
-	msg := ""
+	const msg = "creating a new Template"
 	labels["op"] = "createtemplate"
-	msg = "creating a new Template"
-	id := uuid.NewV4()
-	fn := func() error { return s.db.CreateTemplate(ctx, in.Name, in.Data, id) }
+	id, _ := uuid.NewUUID()
 
 	metrics.CacheTotals.With(labels).Inc()
 	timer := prometheus.NewTimer(metrics.CacheDuration.With(labels))
 	defer timer.ObserveDuration()
 
 	logger.Info(msg)
-	err := fn()
-	logger.Info("done " + msg)
+	err := s.db.CreateTemplate(ctx, in.Name, in.Data, id)
 	if err != nil {
 		metrics.CacheErrors.With(labels).Inc()
 		l := logger
@@ -41,6 +39,7 @@ func (s *server) CreateTemplate(ctx context.Context, in *template.WorkflowTempla
 		l.Error(err)
 		return &template.CreateResponse{}, err
 	}
+	logger.Info("done " + msg)
 	return &template.CreateResponse{Id: id.String()}, err
 }
 
@@ -51,17 +50,19 @@ func (s *server) GetTemplate(ctx context.Context, in *template.GetRequest) (*tem
 	metrics.CacheInFlight.With(labels).Inc()
 	defer metrics.CacheInFlight.With(labels).Dec()
 
-	msg := ""
+	const msg = "getting a template"
 	labels["op"] = "get"
-	msg = "getting a template"
 
-	fn := func() (string, string, error) { return s.db.GetTemplate(ctx, in.Id) }
 	metrics.CacheTotals.With(labels).Inc()
 	timer := prometheus.NewTimer(metrics.CacheDuration.With(labels))
 	defer timer.ObserveDuration()
 
 	logger.Info(msg)
-	n, d, err := fn()
+	fields := map[string]string{
+		"id":   in.GetId(),
+		"name": in.GetName(),
+	}
+	id, n, d, err := s.db.GetTemplate(ctx, fields)
 	logger.Info("done " + msg)
 	if err != nil {
 		metrics.CacheErrors.With(labels).Inc()
@@ -71,7 +72,7 @@ func (s *server) GetTemplate(ctx context.Context, in *template.GetRequest) (*tem
 		}
 		l.Error(err)
 	}
-	return &template.WorkflowTemplate{Id: in.Id, Name: n, Data: d}, err
+	return &template.WorkflowTemplate{Id: id, Name: n, Data: d}, err
 }
 
 // DeleteTemplate implements template.DeleteTemplate
@@ -81,17 +82,15 @@ func (s *server) DeleteTemplate(ctx context.Context, in *template.GetRequest) (*
 	metrics.CacheInFlight.With(labels).Inc()
 	defer metrics.CacheInFlight.With(labels).Dec()
 
-	msg := ""
+	const msg = "deleting a template"
 	labels["op"] = "delete"
-	msg = "deleting a template"
-	fn := func() error { return s.db.DeleteTemplate(ctx, in.Id) }
 
 	metrics.CacheTotals.With(labels).Inc()
 	timer := prometheus.NewTimer(metrics.CacheDuration.With(labels))
 	defer timer.ObserveDuration()
 
 	logger.Info(msg)
-	err := fn()
+	err := s.db.DeleteTemplate(ctx, in.GetId())
 	logger.Info("done " + msg)
 	if err != nil {
 		metrics.CacheErrors.With(labels).Inc()
@@ -105,12 +104,17 @@ func (s *server) DeleteTemplate(ctx context.Context, in *template.GetRequest) (*
 }
 
 // ListTemplates implements template.ListTemplates
-func (s *server) ListTemplates(_ *template.Empty, stream template.Template_ListTemplatesServer) error {
+func (s *server) ListTemplates(in *template.ListRequest, stream template.TemplateService_ListTemplatesServer) error {
 	logger.Info("listtemplates")
 	labels := prometheus.Labels{"method": "ListTemplates", "op": "list"}
 	metrics.CacheTotals.With(labels).Inc()
 	metrics.CacheInFlight.With(labels).Inc()
 	defer metrics.CacheInFlight.With(labels).Dec()
+
+	filter := "%" // default filter will match everything
+	if in.GetName() != "" {
+		filter = strings.ReplaceAll(in.GetName(), "*", "%") // replace '*' with psql '%' wildcard
+	}
 
 	s.dbLock.RLock()
 	ready := s.dbReady
@@ -122,7 +126,7 @@ func (s *server) ListTemplates(_ *template.Empty, stream template.Template_ListT
 
 	timer := prometheus.NewTimer(metrics.CacheDuration.With(labels))
 	defer timer.ObserveDuration()
-	err := s.db.ListTemplates(func(id, n string, crTime, upTime *timestamp.Timestamp) error {
+	err := s.db.ListTemplates(filter, func(id, n string, crTime, upTime *timestamp.Timestamp) error {
 		return stream.Send(&template.WorkflowTemplate{Id: id, Name: n, CreatedAt: crTime, UpdatedAt: upTime})
 	})
 
@@ -142,17 +146,15 @@ func (s *server) UpdateTemplate(ctx context.Context, in *template.WorkflowTempla
 	metrics.CacheInFlight.With(labels).Inc()
 	defer metrics.CacheInFlight.With(labels).Dec()
 
-	msg := ""
+	const msg = "updating a template"
 	labels["op"] = "updatetemplate"
-	msg = "updating a template"
-	fn := func() error { return s.db.UpdateTemplate(ctx, in.Name, in.Data, uuid.FromStringOrNil(in.Id)) }
 
 	metrics.CacheTotals.With(labels).Inc()
 	timer := prometheus.NewTimer(metrics.CacheDuration.With(labels))
 	defer timer.ObserveDuration()
 
 	logger.Info(msg)
-	err := fn()
+	err := s.db.UpdateTemplate(ctx, in.Name, in.Data, uuid.MustParse(in.Id))
 	logger.Info("done " + msg)
 	if err != nil {
 		metrics.CacheErrors.With(labels).Inc()
