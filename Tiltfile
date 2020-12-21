@@ -62,7 +62,6 @@ deploy_kubevirt()
 deploy_database(
     db_name='tinkerbell',
     db_user='tinkerbell',
-    db_init_script=str(read_file('deploy/db/tinkerbell-init.sql')).rstrip('\n').replace(',', '\\,'),
     credentials_secret_name='tink-db-credentials',
     resource_deps=['multus']
 )

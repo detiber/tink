@@ -13,6 +13,63 @@ spec:
       annotations:
         k8s.v1.cni.cncf.io/networks: '[{"interface":"net1","mac":"08:00:35:00:00:00","ips":["172.30.0.4/16"],"name":"tink-dev","namespace":"default"}]'
     spec:
+      initContainers:
+      - name: tink-server-migration
+        image: quay.io/tinkerbell/tink:latest
+        imagePullPolicy: IfNotPresent
+        resources:
+          limits:
+            memory: "128Mi"
+            cpu: "500m"
+        ports:
+        - containerPort: 42113
+          name: grpc-authority
+          protocol: TCP
+        - containerPort: 42114
+          name: http-authority
+          protocol: TCP
+        volumeMounts:
+        - mountPath: /certs
+          name: tink-server-certificate
+        args:
+        - --facility=onprem
+        - --ca-cert=/certs/ca.crt
+        - --tls-cert=/certs/tls.crt
+        - --tls-key=/certs/tls.key
+        envFrom:
+        - prefix: TINK_AUTH_
+          secretRef:
+            name: tink-credentials
+        env:
+        - name: ONLY_MIGRATION
+          value: "true"
+        - name: PACKET_ENV
+          value: testing
+        - name: PACKET_VERSION
+          value: ignored
+        - name: PGDATABASE
+          value: tinkerbell
+        - name: PGHOST
+          value: db-postgresql
+        - name: PGPASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: db-postgresql
+              key: postgresql-postgres-password
+        - name: PGPORT
+          value: "5432"
+        - name: PGSSLMODE
+          value: disable
+        - name: PGUSER
+          value: postgres
+        - name: ROLLBAR_DISABLE
+          value: "1"
+        - name: ROLLBAR_TOKEN
+          value: ignored
+        - name: TINKERBELL_GRPC_AUTHORITY
+          value: :42113
+        - name: TINKERBELL_HTTP_AUTHORITY
+          value: :42114
       containers:
       - name: tink-server
         image: quay.io/tinkerbell/tink:latest
@@ -63,13 +120,13 @@ spec:
           valueFrom:
             secretKeyRef:
               name: db-postgresql
-              key: postgresql-password
+              key: postgresql-postgres-password
         - name: PGPORT
           value: "5432"
         - name: PGSSLMODE
           value: disable
         - name: PGUSER
-          value: tinkerbell
+          value: postgres
         - name: ROLLBAR_DISABLE
           value: "1"
         - name: ROLLBAR_TOKEN
