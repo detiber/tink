@@ -127,7 +127,6 @@ local_resource(
         'pkg',
         'protos'
     ],
-    resource_deps=['wait-for-cert-manager']
 )
 
 docker_build_with_restart(

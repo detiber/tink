@@ -18,6 +18,7 @@ spec:
       requests:
         memory: 2048M
     devices:
+      rng: {}
       #autoattachGraphicsDevice: false
       disks:
       - name: emptydisk
