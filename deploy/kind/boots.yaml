@@ -34,7 +34,7 @@ spec:
             memory: "128Mi"
             cpu: "500m"
         command:
-        - /boots
+        - /usr/bin/boots
         - -dhcp-addr=0.0.0.0:67
         - -tftp-addr=0.0.0.0:69
         - -http-addr=0.0.0.0:80
