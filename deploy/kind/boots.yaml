@@ -27,7 +27,7 @@ spec:
           privileged: true
       containers:
       - name: boots
-        image: quay.io/tinkerbell/boots:latest
+        image: quay.io/tinkerbell/boots:sha-62ed4b82
         imagePullPolicy: IfNotPresent
         resources:
           limits:

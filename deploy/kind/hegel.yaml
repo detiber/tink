@@ -13,7 +13,7 @@ spec:
     spec:
       containers:
       - name: hegel
-        image: quay.io/tinkerbell/hegel:latest
+        image: quay.io/tinkerbell/hegel:sha-c8a68311
         imagePullPolicy: IfNotPresent
         resources:
           limits:
