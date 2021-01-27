@@ -1,10 +1,12 @@
 apiVersion: kubevirt.io/v1alpha3
 kind: VirtualMachineInstance
 metadata:
-  name: worker
+  name: controlplane
 spec:
   terminationGracePeriodSeconds: 30
   domain:
+    cpu:
+      cores: 2
     clock:
       utc: {}
       timer:
@@ -16,7 +18,7 @@ spec:
           tickPolicy: catchup
     resources:
       requests:
-        memory: 2048M
+        memory: 4096M
     devices:
       rng: {}
       #autoattachGraphicsDevice: false
@@ -26,18 +28,18 @@ spec:
           bus: virtio
         bootOrder: 2
       interfaces:
-      - name: default
-        masquerade: {}
+      # - name: default
+      #   masquerade: {}
       - name: tink-dev
         bridge: {}
         macAddress: "08:00:27:00:00:01"
         bootOrder: 1
   networks:
-  - name: default
-    pod: {}
-  - name: tink-dev
-    multus:
+  # - pod: {}
+  #   name: default
+  - multus:
       networkName: tink-dev-no-ip
+    name: tink-dev
   volumes:
   - name: emptydisk
     emptyDisk:

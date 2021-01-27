@@ -32,6 +32,7 @@ On Linux you will need remote-viewer
 
 ```sh
 kind create cluster
+docker exec -it kind-control-plane sh -c "echo 0 >/proc/sys/net/bridge/bridge-nf-call-iptables"
 ```
 
 - Start tilt
@@ -67,10 +68,52 @@ cat > hardware-data.json <<EOF
         "dhcp": {
           "arch": "x86_64",
           "ip": {
-            "address": "172.30.0.5",
+            "address": "172.30.200.5",
+            "gateway": "172.30.200.1",
             "netmask": "255.255.0.0"
           },
           "mac": "08:00:27:00:00:01",
+          "nameservers": [
+            "8.8.8.8"
+          ],
+          "uefi": false
+        },
+        "netboot": {
+          "allow_pxe": true,
+          "allow_workflow": true
+        }
+      }
+    ]
+  }
+}
+EOF
+
+tink hardware push --file hardware-data.json
+
+cat > hardware-data.json <<EOF
+{
+  "id": "fe2e62ed-826f-4485-a39f-a82bb74338e3",
+  "metadata": {
+    "facility": {
+      "facility_code": "onprem"
+    },
+    "instance": {},
+    "state": ""
+  },
+  "network": {
+    "interfaces": [
+      {
+        "dhcp": {
+          "arch": "x86_64",
+          "ip": {
+            "address": "172.30.200.6",
+            "gateway": "172.30.200.1",
+            "netmask": "255.255.0.0"
+          },
+          "mac": "08:00:27:00:00:02",
+          "nameservers": [
+            "8.8.8.8"
+          ],
           "uefi": false
         },
         "netboot": {
@@ -99,13 +142,13 @@ tasks:
 EOF
 
 tink template create -n hello-world -p hello-world.yml
-tink workflow create -t <template id> -r '{"device_1":"08:00:27:00:00:01"}'
+tink workflow create -t <template id> -r '{"device_1":"08:00:28:00:00:01"}'
 ```
 
 ## Load the hello-world image into the registry
 
 ```sh
-kubectl run -it --command --rm --attach --image quay.io/containers/skopeo:v1.1.1 --overrides='{ "apiVersion": "v1", "metadata": {"annotations": { "k8s.v1.cni.cncf.io/networks":"[{\"interface\":\"net1\",\"mac\":\"08:00:31:00:00:00\",\"ips\":[\"172.30.0.100/16\"],\"name\":\"tink-dev\",\"namespace\":\"default\"}]" } }, "spec": { "containers": [ { "name": "skopeo", "image": "quay.io/containers/skopeo:v1.1.1", "command": [ "sh" ], "tty": true, "stdin": true, "volumeMounts": [ { "name": "registry-creds", "mountPath": "/creds" } ] } ], "volumes": [ { "name": "registry-creds", "secret": { "secretName": "tink-registry-credentials" } } ] } }' skopeo -- sh
+kubectl run -it --command --rm --attach --image quay.io/containers/skopeo:v1.1.1 --overrides='{ "apiVersion": "v1", "metadata": {"annotations": { "k8s.v1.cni.cncf.io/networks":"[{\"interface\":\"net1\",\"mac\":\"08:00:31:00:00:00\",\"ips\":[\"172.30.200.100/16\"],\"name\":\"tink-dev\",\"namespace\":\"default\"}]" } }, "spec": { "containers": [ { "name": "skopeo", "image": "quay.io/containers/skopeo:v1.1.1", "command": [ "sh" ], "tty": true, "stdin": true, "volumeMounts": [ { "name": "registry-creds", "mountPath": "/creds" } ] } ], "volumes": [ { "name": "registry-creds", "secret": { "secretName": "tink-registry-credentials" } } ] } }' skopeo -- sh
 
 skopeo copy --dest-tls-verify=false --dest-creds=admin:$(cat /creds/PASSWORD) docker://hello-world docker://$(cat /creds/URL)/hello-world
 ```

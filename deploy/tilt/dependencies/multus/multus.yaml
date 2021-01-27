@@ -111,7 +111,7 @@ spec:
         command:
         - sh
         - -c
-        - "wget https://github.com/containernetworking/plugins/releases/download/v0.8.7/cni-plugins-linux-amd64-v0.8.7.tgz -O - | tar -xzC /host/opt/cni/bin/ ./bridge ./static"
+        - "wget https://github.com/containernetworking/plugins/releases/download/v0.8.7/cni-plugins-linux-amd64-v0.8.7.tgz -O - | tar -xzC /host/opt/cni/bin/ ./bridge ./static ./macvlan ./firewall"
         volumeMounts:
         - name: cnibin
           mountPath: /host/opt/cni/bin

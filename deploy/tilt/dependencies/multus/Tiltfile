@@ -1,26 +1,19 @@
-def deploy_multus(cidr):
+def deploy_multus():
     k8s_yaml('deploy/tilt/dependencies/multus/multus.yaml')
     cni_config = {
-        'cniVersion': '0.3.1',
+        'cniVersion': '0.4.0',
         'name': 'tink-dev',
         'plugins': [
             {
                 'type': 'bridge',
+                'bridge': 'tink-dev',
+                'isGateway': True,
                 'capabilities': {
                     'ips': True,
                 },
-                'bridge': 'tink-dev',
                 'ipam': {
-                    'type': 'static',
-                    'routes': [
-                        {
-                            'dst': cidr,
-                        }
-                    ]
+                    'type': 'static'
                 }
-            },
-            {
-                'type': 'kind-no-snat-interface'
             }
         ]
     }
@@ -42,17 +35,6 @@ def deploy_multus(cidr):
             {
                 'type': 'bridge',
                 'bridge': 'tink-dev'
-            },
-            {
-                'type': 'route-override',
-                'addroutes': [
-                    {
-                        'dst': cidr
-                    }
-                ]
-            },
-            {
-                'type': 'kind-no-snat-interface'
             }
         ]
     }

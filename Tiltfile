@@ -12,12 +12,6 @@ load('ext://restart_process', 'docker_build_with_restart')
 # Load the extension for helm_remote
 load('ext://helm_remote', 'helm_remote')
 
-# Load the multus helpers
-load('deploy/tilt/dependencies/multus/Tiltfile', 'deploy_multus')
-
-# Load the database helpers
-load('deploy/tilt/dependencies/database/Tiltfile', 'deploy_database')
-
 # Load the registry helpers
 load('deploy/tilt/dependencies/registry/Tiltfile', 'deploy_registry', 'image_resource')
 
@@ -44,8 +38,13 @@ def load_from_repo_with_fallback(path, workload_name, fallback_yaml, fallback_de
             resource_deps=fallback_deps
         )
 
-# Multus (Needed for l2 networking with KubeVirt)
-deploy_multus('172.30.0.0/16')
+# Load the multus configuration
+load('deploy/tilt/dependencies/multus/Tiltfile', 'deploy_multus')
+deploy_multus()
+
+# Load the kubevirt helpers
+load('deploy/tilt/dependencies/kubevirt/Tiltfile', 'deploy_kubevirt')
+deploy_kubevirt()
 
 # cert-manager
 # Load the cert manager helpers
@@ -54,11 +53,9 @@ load('deploy/tilt/dependencies/cert-manager/TiltfileCertManagerIssuer', 'issuer'
 cert_manager(resource_deps=['multus'])
 issuer(self_signed_ca_issuer_name='tink-ca',resource_deps=['wait-for-cert-manager-webhook'])
 
-# Load the kubevirt helpers
-load('deploy/tilt/dependencies/kubevirt/Tiltfile', 'deploy_kubevirt')
-deploy_kubevirt()
-
-# PostgreSQL
+# # PostgreSQL
+# Load the database helpers
+load('deploy/tilt/dependencies/database/Tiltfile', 'deploy_database')
 deploy_database(
     db_name='tinkerbell',
     db_user='tinkerbell',
@@ -66,8 +63,8 @@ deploy_database(
     resource_deps=['multus']
 )
 
-# Registry
-registry_ip='172.30.0.3'
+# # Registry
+registry_ip='172.30.200.3'
 registry_mac='08:00:29:00:00:00'
 registry_mask='/16'
 registry_network_attachment='tink-dev'
@@ -157,7 +154,7 @@ ENTRYPOINT ["/tink-server"]
     ]
 )
 
-tink_ip = '172.30.0.4'
+tink_ip = '172.30.200.4'
 
 create_secret_if_not_exists('tink-credentials', USERNAME='admin', PASSWORD=generate_password())
 

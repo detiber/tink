@@ -14,7 +14,7 @@ def deploy_kubevirt():
             'kubevirt-cluster-critical:priorityclass',
             'kubevirt.io\\:operator:clusterrole'
         ],
-        resource_deps=['multus', 'sleep-until-cert-manager-configures']
+        resource_deps=['multus']
     )
 
     # TODO: try to detect if kvm/virtio are supported and skip this step if they are
@@ -26,7 +26,8 @@ def deploy_kubevirt():
             'namespace': 'kubevirt'
         },
         'data': {
-            'debug.useEmulation': 'true'
+            'feature-gates': 'Macvtap'
+            #'debug.useEmulation': 'true'
         }
     }
     k8s_yaml(encode_yaml(kubevirt_config))
@@ -41,6 +42,7 @@ def deploy_kubevirt():
         'spec': {
             'certificateRotateStrategy': {},
             'configuration': {},
+            'customizeComponents': {},
             'imagePullPolicy': 'IfNotPresent',
         }
     }
@@ -51,5 +53,5 @@ def deploy_kubevirt():
             'kubevirt:kubevirt',
             'kubevirt-config:configmap:kubevirt'
         ],
-        resource_deps=['virt-operator', 'cert-manager-webhook']    
+        resource_deps=['virt-operator']    
     )

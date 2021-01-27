@@ -10,10 +10,21 @@ spec:
   template:
     metadata:
       annotations:
-        k8s.v1.cni.cncf.io/networks: '[{"interface":"net1","mac":"08:00:27:00:00:00","ips":["172.30.0.1/16"],"name":"tink-dev","namespace":"default"}]'
+        k8s.v1.cni.cncf.io/networks: '[{"interface":"net1","mac":"08:00:28:00:00:00","ips":["172.30.200.1/16"],"name":"tink-dev","namespace":"default"}]'
       labels:
         app: boots
     spec:
+      initContainers:
+      - name: gateway
+        command:
+        - /bin/sh
+        - -c
+        - iptables -t nat -I POSTROUTING -o eth0 -j MASQUERADE
+        image: docker.io/library/docker:dind
+        securityContext:
+          capabilities:
+            add: ["NET_ADMIN", "NET_RAW"]
+          privileged: true
       containers:
       - name: boots
         image: quay.io/tinkerbell/boots:latest
@@ -35,9 +46,9 @@ spec:
             name: tink-registry-credentials
         env:
         - name: PUBLIC_IP
-          value: 172.30.0.1
+          value: 172.30.200.1
         - name: MIRROR_BASE_URL
-          value: http://172.30.0.2
+          value: http://172.30.200.2
         - name: API_AUTH_TOKEN
           value: ignored
         - name: API_CONSUMER_TOKEN
@@ -59,9 +70,9 @@ spec:
         - name: DOCKER_REGISTRY
           value: $(REGISTRY_URL)
         - name: TINKERBELL_GRPC_AUTHORITY
-          value: 172.30.0.4:42113
+          value: 172.30.200.4:42113
         - name: TINKERBELL_CERT_URL
-          value: http://172.30.0.4:42114/cert
+          value: http://172.30.200.4:42114/cert
         ports:
         - containerPort: 80
           name: http
