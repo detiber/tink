@@ -1,7 +1,7 @@
 apiVersion: kubevirt.io/v1alpha3
 kind: VirtualMachineInstance
 metadata:
-  name: controlplane
+  name: worker1
 spec:
   terminationGracePeriodSeconds: 30
   domain:
