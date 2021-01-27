@@ -49,7 +49,7 @@ def cert_manager(resource_deps=[]):
         resource_deps=["wait-for-cert-manager"]
     )
     local_resource("sleep-until-cert-manager-acquires-kube-system-lease",
-        cmd="sleep 50",
+        cmd="sleep 20",
         resource_deps=["wait-for-cert-manager-api-service"]
     )
     k8s_resource(
@@ -83,7 +83,7 @@ def cert_manager(resource_deps=[]):
         resource_deps=["cert-manager-webhook"]
     )
     local_resource("sleep-until-cert-manager-configures",
-        cmd="sleep 90",
+        cmd="sleep 20",
         resource_deps=["wait-for-cert-manager-webhook"]
     )
 
